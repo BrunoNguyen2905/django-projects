@@ -204,6 +204,9 @@ AUTH_USER_MODEL = "accounts.CustomUser"
 # https://docs.djangoproject.com/en/dev/ref/settings/#site-id
 SITE_ID = 1
 
+# Ensure django.contrib.sites is in INSTALLED_APPS
+# (should already be included above)
+
 # https://docs.djangoproject.com/en/dev/ref/settings/#login-url
 LOGIN_URL = "/accounts/login/"
 # https://docs.djangoproject.com/en/dev/ref/settings/#login-redirect-url
