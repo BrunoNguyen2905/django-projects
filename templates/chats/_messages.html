@@ -1,0 +1,12 @@
+{% load markdownify %}
+
+{% for msg in chat_history %}
+  <div class="mb-3">
+    <span class="badge {% if msg.sender == 'human' %}bg-primary{% else %}bg-secondary{% endif %}">
+      {{ msg.sender|capfirst }}
+    </span>
+    <div class="mt-1">{{ msg.text|markdownify }}</div>
+  </div>
+{% empty %}
+  <p class="text-muted">No messages yet.</p>
+{% endfor %}

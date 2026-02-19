@@ -1,0 +1,15 @@
+{
+  // Django-specific settings - only applies to this project
+  "[django-html]": {
+    "editor.defaultFormatter": null,
+    "editor.formatOnSave": false,
+    "editor.formatOnPaste": false
+  },
+  "[html]": {
+    "editor.defaultFormatter": null,
+    "editor.formatOnSave": false,
+    "editor.formatOnPaste": false
+  },
+  // Exclude Django template files from Prettier
+  "prettier.ignorePath": ".prettierignore"
+}

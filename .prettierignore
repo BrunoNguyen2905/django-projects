@@ -1,0 +1,13 @@
+# Ignore Django templates - they contain Django template syntax that Prettier can't handle
+templates/**/*.html
+**/templates/**/*.html
+
+# Keep other files formatable for JS/React projects
+!*.js
+!*.jsx
+!*.ts
+!*.tsx
+!*.json
+!*.css
+!*.scss
+!*.md

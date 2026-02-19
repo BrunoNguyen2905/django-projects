@@ -1,0 +1,403 @@
+{% extends '_base.html' %}
+
+{% block title %}Music Search{% endblock title %}
+
+{% block content %}
+<div class="container py-4">
+  <h1 class="mb-4">Music Search</h1>
+
+  <div data-signals="{sending:false}">
+    <!-- IMPORTANT: keep method=post for CSRF if you still use it elsewhere,
+         but this form is intercepted by JS for streaming -->
+    <form id="searchForm" method="post" action="{% url 'search' %}" class="mb-4">
+      {% csrf_token %}
+      <div class="row g-2 align-items-end">
+        <div class="col-md-8">
+          <label for="q" class="form-label">Describe the music you want</label>
+          <input
+            type="text"
+            name="q"
+            id="q"
+            class="form-control form-control-lg"
+            placeholder="e.g. acoustic beautiful chill lofi"
+            value="{{ query }}"
+            autofocus
+          />
+        </div>
+        <div class="col-md-4">
+          <button
+            id="searchBtn"
+            type="submit"
+            class="btn btn-primary btn-lg w-100"
+            data-indicator:sending
+            data-attr:disabled="$sending ? 'disabled' : null"
+          >
+            <span data-show="!$sending">Search</span>
+            <span data-show="$sending">Searching...</span>
+          </button>
+        </div>
+      </div>
+    </form>
+
+    <p class="text-muted mb-4" data-show="$sending">Searching...</p>
+
+    <!-- Progress: real-time thinking list -->
+    <div class="mb-4">
+      <div id="thinkingPanel" class="search-thinking-panel rounded-3 px-3 py-2" style="display: none;">
+        <div class="d-flex align-items-start gap-2">
+          <div id="thinkingIndicator" class="search-thinking-dots flex-shrink-0 mt-2">
+            <span></span><span></span><span></span>
+          </div>
+          <div class="flex-grow-1 min-w-0">
+            <ul id="thinkingHistory" class="search-thinking-list list-unstyled mb-0 small" aria-label="Search progress"></ul>
+          </div>
+          <button type="button" class="btn btn-sm btn-link text-muted p-0 align-self-start" id="clearLogsBtn" title="Clear">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .search-thinking-panel {
+        background: var(--bs-tertiary-bg, #f8f9fa);
+        border: 1px solid var(--bs-border-color-translucent, rgba(0,0,0,.08));
+      }
+      .search-thinking-dots {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+      }
+      .search-thinking-dots span {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--bs-secondary, #adb5bd);
+        animation: search-thinking-bounce 1.4s ease-in-out infinite both;
+      }
+      .search-thinking-dots span:nth-child(1) { animation-delay: 0s; }
+      .search-thinking-dots span:nth-child(2) { animation-delay: 0.16s; }
+      .search-thinking-dots span:nth-child(3) { animation-delay: 0.32s; }
+      @keyframes search-thinking-bounce {
+        0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+        40% { transform: scale(1); opacity: 0.9; }
+      }
+      .search-thinking-panel.idle .search-thinking-dots {
+        display: none;
+      }
+      .search-thinking-list {
+        max-height: 220px;
+        overflow-y: auto;
+        font-weight: 400;
+        color: var(--bs-secondary-color, #6c757d);
+        font-size: 0.8125rem;
+        line-height: 1.5;
+      }
+      .search-thinking-list li {
+        padding: 0.2rem 0;
+        border-bottom: 1px solid var(--bs-border-color-translucent, rgba(0,0,0,.06));
+        word-break: break-word;
+        white-space: pre-wrap;
+        animation: search-thinking-fade-in 0.35s ease-out;
+      }
+      .search-thinking-list li:last-child {
+        border-bottom: none;
+      }
+      @keyframes search-thinking-fade-in {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    </style>
+
+    {% comment %} LLM output (token stream) – commented out
+    <div class="col-12 col-lg-6">
+      <div class="card">
+        <div class="card-header"><span class="fw-semibold">LLM output (token stream)</span></div>
+        <div class="card-body">
+          <pre id="thinkingPre" class="mb-0" style="white-space: pre-wrap; max-height: 260px; overflow:auto;"></pre>
+        </div>
+      </div>
+    </div>
+    {% endcomment %}
+
+    {% if error %}
+    <div class="alert alert-danger" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <!-- Active filters -->
+    <div id="filtersWrap" class="mb-3" style="display:none;">
+      <span class="text-muted me-2">Active filters:</span>
+      <span id="filtersBadges"></span>
+    </div>
+
+    <!-- Results -->
+    <h2 class="h5 mb-3">Tracks (<span id="trackCount">0</span>)</h2>
+
+    <div id="resultsWrap" class="row g-3">
+      {# Existing server-rendered fallback results (if any) #}
+      {% if songs %}
+        <script>
+          // If server rendered results exist, we’ll initialize count on load.
+          window.__INITIAL_SONGS__ = {{ songs|safe }};
+          window.__INITIAL_FILTERS__ = {{ active_filters|default:"{}"|safe }};
+        </script>
+
+        {% for song in songs %}
+        <div class="col-12">
+          <div class="card">
+            <div class="card-body">
+              <div class="d-flex align-items-start gap-3 flex-wrap">
+                {% for artist in song.artists %}
+                  {% if artist.image %}
+                  <img
+                    src="{{ artist.image }}"
+                    alt="{{ artist.name }}"
+                    class="rounded-circle flex-shrink-0"
+                    width="48"
+                    height="48"
+                    style="object-fit: cover;"
+                  />
+                  {% endif %}
+                {% endfor %}
+                <div class="flex-grow-1 min-w-0">
+                  <h3 class="h6 card-title mb-1">{{ song.title }}</h3>
+                  <p class="card-text text-muted small mb-2">
+                    {% for artist in song.artists %}{% if not forloop.first %}, {% endif %}{{ artist.name }}{% endfor %}
+                  </p>
+                  {% if song.primary_audio_mp3 %}
+                  <audio
+                    controls
+                    preload="metadata"
+                    class="w-100"
+                    style="max-width: 400px; height: 40px;"
+                  >
+                    <source src="{{ song.primary_audio_mp3 }}" type="audio/mpeg" />
+                    Your browser does not support the audio element.
+                  </audio>
+                  {% else %}
+                  <span class="text-muted small">No preview</span>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p id="noResultsMsg" class="text-muted">No tracks yet. Run a search.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const form = document.getElementById("searchForm");
+  const qInput = document.getElementById("q");
+  const btn = document.getElementById("searchBtn");
+
+  const thinkingPanel = document.getElementById("thinkingPanel");
+  const thinkingHistory = document.getElementById("thinkingHistory");
+  const clearLogsBtn = document.getElementById("clearLogsBtn");
+
+  const resultsWrap = document.getElementById("resultsWrap");
+  const trackCountEl = document.getElementById("trackCount");
+  const noResultsMsg = document.getElementById("noResultsMsg");
+
+  const filtersWrap = document.getElementById("filtersWrap");
+  const filtersBadges = document.getElementById("filtersBadges");
+
+  let es = null;
+  let count = 0;
+
+  function setSending(isSending) {
+    // Keep your data-signals behavior, but also enforce UI state here:
+    btn.disabled = isSending;
+    btn.querySelectorAll("[data-show]").forEach(() => {}); // harmless; signals will handle
+    if (isSending) {
+      btn.innerText = "Searching...";
+    } else {
+      btn.innerText = "Search";
+    }
+  }
+
+  function appendProgressLine(line) {
+    const text = (line || "").trim();
+    if (!text) return;
+    const li = document.createElement("li");
+    li.textContent = text;
+    thinkingHistory.appendChild(li);
+    thinkingHistory.scrollTop = thinkingHistory.scrollHeight;
+    thinkingPanel.style.display = "";
+    thinkingPanel.classList.remove("idle");
+  }
+
+  function clearResults() {
+    // remove all existing result cards (keep only the noResults paragraph if present)
+    resultsWrap.querySelectorAll(".col-12").forEach(n => n.remove());
+    if (noResultsMsg) noResultsMsg.remove();
+    count = 0;
+    trackCountEl.textContent = "0";
+  }
+
+  function addSongCard(song) {
+    // song fields: id, title, artists[{name,image}], primary_audio_mp3
+    const col = document.createElement("div");
+    col.className = "col-12";
+
+    const artists = Array.isArray(song.artists) ? song.artists : [];
+    const artistNames = artists.map(a => a?.name).filter(Boolean).join(", ");
+
+    const artistImgsHtml = artists
+      .filter(a => a?.image)
+      .slice(0, 5)
+      .map(a => `
+        <img
+          src="${a.image}"
+          alt="${(a.name || "").replace(/"/g, "&quot;")}"
+          class="rounded-circle flex-shrink-0"
+          width="48"
+          height="48"
+          style="object-fit: cover;"
+        />
+      `).join("");
+
+    const audioHtml = song.primary_audio_mp3
+      ? `<audio controls preload="metadata" class="w-100" style="max-width: 400px; height: 40px;">
+           <source src="${song.primary_audio_mp3}" type="audio/mpeg" />
+           Your browser does not support the audio element.
+         </audio>`
+      : `<span class="text-muted small">No preview</span>`;
+
+    col.innerHTML = `
+      <div class="card">
+        <div class="card-body">
+          <div class="d-flex align-items-start gap-3 flex-wrap">
+            ${artistImgsHtml}
+            <div class="flex-grow-1 min-w-0">
+              <h3 class="h6 card-title mb-1">${song.title || "Track"}</h3>
+              <p class="card-text text-muted small mb-2">${artistNames}</p>
+              ${audioHtml}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    resultsWrap.appendChild(col);
+  }
+
+  function renderFilters(filtersObj) {
+    if (!filtersObj || typeof filtersObj !== "object") return;
+    filtersBadges.innerHTML = "";
+    const entries = Object.entries(filtersObj);
+    if (!entries.length) {
+      filtersWrap.style.display = "none";
+      return;
+    }
+    for (const [category, terms] of entries) {
+      const span = document.createElement("span");
+      span.className = "badge bg-secondary me-1 mb-1";
+      const joined = Array.isArray(terms) ? terms.join(", ") : String(terms);
+      span.textContent = `${category.charAt(0).toUpperCase() + category.slice(1)}: ${joined}`;
+      filtersBadges.appendChild(span);
+    }
+    filtersWrap.style.display = "";
+  }
+
+  function closeStream() {
+    if (es) {
+      es.close();
+      es = null;
+    }
+  }
+
+  clearLogsBtn?.addEventListener("click", () => {
+    thinkingHistory.innerHTML = "";
+    thinkingPanel.style.display = "none";
+    thinkingPanel.classList.add("idle");
+    console.log("[UI] cleared progress");
+  });
+
+  // Initialize count for server-rendered results (fallback)
+  document.addEventListener("DOMContentLoaded", () => {
+    const initial = window.__INITIAL_SONGS__;
+    if (Array.isArray(initial) && initial.length) {
+      count = initial.length;
+      trackCountEl.textContent = String(count);
+    }
+    renderFilters(window.__INITIAL_FILTERS__);
+  });
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = (qInput.value || "").trim();
+    if (!q) return;
+
+    // reset UI – show thinking panel with animated dots and empty list
+    thinkingHistory.innerHTML = "";
+    thinkingPanel.style.display = "";
+    thinkingPanel.classList.remove("idle");
+    filtersWrap.style.display = "none";
+    filtersBadges.innerHTML = "";
+    clearResults();
+
+    closeStream();
+    setSending(true);
+
+    const url = "{% url 'search_stream' %}" + "?q=" + encodeURIComponent(q);
+    console.log("[SSE] connecting:", url);
+
+    es = new EventSource(url);
+
+    es.addEventListener("log", (evt) => {
+      const data = JSON.parse(evt.data);
+      appendProgressLine(data.message || "");
+      console.log("[SSE log]", data);
+    });
+
+    es.addEventListener("results", (evt) => {
+      const data = JSON.parse(evt.data);
+      const items = data.items || [];
+      console.log("[SSE results]", { count: items.length, sample: items[0] });
+
+      if (items.length) {
+        for (const song of items) addSongCard(song);
+        count += items.length;
+        trackCountEl.textContent = String(count);
+      }
+    });
+
+    es.addEventListener("state", (evt) => {
+      // Optional: uncomment if you want noisy state logs
+      // console.log("[SSE state]", JSON.parse(evt.data));
+    });
+
+    // explain_token / llm_token no longer displayed (LLM token stream section removed)
+
+    es.addEventListener("error", (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        appendProgressLine("ERROR: " + (data.message || "unknown"));
+        console.error("[SSE error payload]", data);
+      } catch {
+        appendProgressLine("ERROR: stream disconnected");
+        console.error("[SSE error] disconnected", evt);
+      }
+      thinkingPanel.classList.add("idle");
+      setSending(false);
+      closeStream();
+    });
+
+    es.addEventListener("done", (evt) => {
+      const data = JSON.parse(evt.data);
+      appendProgressLine(data.message || "Done");
+      console.log("[SSE done]", data);
+      thinkingPanel.classList.add("idle");
+      setSending(false);
+      closeStream();
+    });
+  });
+})();
+</script>
+{% endblock content %}
+
+

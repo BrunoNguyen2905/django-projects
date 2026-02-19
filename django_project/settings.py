@@ -1,7 +1,13 @@
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables
+from environs import Env
+env = Env()
+env.read_env()
 
 
 # Quick-start development settings - unsuitable for production
@@ -9,7 +15,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#secret-key
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-0peo@#x9jur3!h$ryje!$879xww8y1y66jx!%*#ymhg&jkozs2"
+SECRET_KEY = env.str("SECRET_KEY", "django-insecure-0peo@#x9jur3!h$ryje!$879xww8y1y66jx!%*#ymhg&jkozs2")
+
+# API Keys from environment variables
+OPENAI_API_KEY = env.str("OPENAI_API_KEY", "")
+SOUNDSTRIPE_API_KEY_DEVELOPMENT = env.str("SOUNDSTRIPE_API_KEY_DEVELOPMENT", "")
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#debug
 # SECURITY WARNING: don't run with debug turned on in production!
@@ -36,9 +46,13 @@ INSTALLED_APPS = [
     "crispy_forms",
     "crispy_bootstrap5",
     "debug_toolbar",
+    'widget_tweaks',
+    'markdownify', # for markdown support
     # Local
     "accounts",
     "pages",
+    "chats",
+    "search_orchestration",
 ]
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#middleware
@@ -83,6 +97,14 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
+    }
+}
+
+# Cache configuration for django-cache-memoize
+# https://docs.djangoproject.com/en/dev/topics/cache/
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
     }
 }
 
@@ -182,6 +204,8 @@ AUTH_USER_MODEL = "accounts.CustomUser"
 # https://docs.djangoproject.com/en/dev/ref/settings/#site-id
 SITE_ID = 1
 
+# https://docs.djangoproject.com/en/dev/ref/settings/#login-url
+LOGIN_URL = "/accounts/login/"
 # https://docs.djangoproject.com/en/dev/ref/settings/#login-redirect-url
 LOGIN_REDIRECT_URL = "home"
 

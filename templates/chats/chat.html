@@ -1,0 +1,54 @@
+{% extends '_base.html' %}
+{% load widget_tweaks %}
+{% load markdownify %}
+
+{% block title %}Chat{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">💬 Chat with AI</h2>
+
+<div
+  class="mb-4 border rounded p-3 bg-white"
+  style="height: 400px; overflow-y: auto"
+>
+  {% for msg in chat_history %}
+  <div class="mb-3">
+    <span
+      class="badge {% if msg.sender == 'human' %}bg-primary{% else %}bg-secondary{% endif %}"
+    >
+      {{ msg.sender|capfirst }}
+    </span>
+    <div class="mt-1">{{ msg.text|markdownify }}</div>
+  </div>
+  {% empty %}
+  <p class="text-muted">No messages yet.</p>
+  <p data-show="$sending">Thinking...</p>
+  {% endfor %}
+</div>
+
+<div data-signals="{sending:false}">
+  <form method="post" class="card card-body shadow-sm"  action="{% url 'chats:chat' id=session.id %}">
+    {% csrf_token %}
+    <div class="mb-3">
+      {{ form.user_input.label_tag }}
+      {% render_field form.user_input class="form-control" placeholder="Type your message..." %}
+      {% comment %} {{ form.user_input
+        |add_class:"form-control"
+        |attr:"placeholder:Type your message..."
+        |attr:"data-ref:input"
+        |attr:"autocomplete:off"
+      }} {% endcomment %}
+    </div>
+    <button 
+      type="submit" 
+      class="btn btn-primary"
+      data-on:click="@post('{% url 'chats:chat' id=session.id %}', { contentType: 'form' })"
+      data-indicator:sending
+      data-attr:disabled="$sending ? 'disabled' : null"
+    >
+      <span data-show="!$sending">Send</span>
+      <span data-show="$sending">Thinking...</span>
+    </button>
+  </form>
+</div>
+{% endblock %}

@@ -6,6 +6,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/", include("allauth.urls")),
     path("", include("pages.urls")),
+    path("chats/", include("chats.urls")),
+    path("search/", include("search_orchestration.urls")),
 ]
 
 if settings.DEBUG:
