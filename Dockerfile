@@ -31,7 +31,7 @@
 # CMD ["gunicorn", "--bind", ":8000", "--workers", "2", "django_project.wsgi"]
 FROM python:3.12-slim-bookworm
 
-COPY --from=builder --chown=app:app /app /app
+COPY --from=builder /app /app
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
