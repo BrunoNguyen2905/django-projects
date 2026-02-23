@@ -19,6 +19,8 @@ dependencies = [
   "environs",
   "django-cache-memoize>=0.2.1",
   "uvicorn>=0.40.0",
+  "dj-database-url>=3.1.2",
+  "psycopg2-binary>=2.9.11",
 ]
 
 [dependency-groups]

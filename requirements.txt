@@ -21,8 +21,12 @@ cffi==1.17.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
 charset-normalizer==3.4.0
     # via requests
+click==8.3.1
+    # via uvicorn
 colorama==0.4.6 ; sys_platform == 'win32'
-    # via tqdm
+    # via
+    #   click
+    #   tqdm
 crispy-bootstrap5==2024.10
     # via lithium
 cryptography==43.0.3
@@ -31,9 +35,12 @@ defusedxml==0.7.1
     # via python3-openid
 distro==1.9.0
     # via openai
+dj-database-url==3.1.2
+    # via lithium
 django==5.1.3
     # via
     #   crispy-bootstrap5
+    #   dj-database-url
     #   django-allauth
     #   django-crispy-forms
     #   django-debug-toolbar
@@ -57,7 +64,9 @@ environs==14.5.0
 gunicorn==23.0.0
     # via lithium
 h11==0.16.0
-    # via httpcore
+    # via
+    #   httpcore
+    #   uvicorn
 httpcore==1.0.9
     # via httpx
 httpx==0.28.1
@@ -123,6 +132,8 @@ psycopg==3.2.3
     # via lithium
 psycopg-binary==3.2.3 ; implementation_name != 'pypy'
     # via psycopg
+psycopg2-binary==2.9.11
+    # via lithium
 pycparser==2.22 ; platform_python_implementation != 'PyPy'
     # via cffi
 pydantic==2.12.5
@@ -192,6 +203,8 @@ uuid-utils==0.14.0
     # via
     #   langchain-core
     #   langsmith
+uvicorn==0.40.0
+    # via lithium
 webencodings==0.5.1
     # via
     #   bleach
