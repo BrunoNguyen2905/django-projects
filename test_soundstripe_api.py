@@ -15,7 +15,7 @@ if not settings.configured:
 
     settings.configure(
         OPENAI_API_KEY=env.str("OPENAI_API_KEY", ""),
-        SOUNDSTRIPE_API_KEY_DEVELOPMENT=env.str("SOUNDSTRIPE_API_KEY_DEVELOPMENT", ""),
+        SOUNDSTRIPE_API_KEY=env.str("SOUNDSTRIPE_API_KEY", ""),
         SECRET_KEY=env.str("SECRET_KEY", "test-key"),
         INSTALLED_APPS=['django.contrib.contenttypes'],
         USE_TZ=True,
@@ -50,7 +50,7 @@ def test_api_connectivity():
         # Check if it's an auth error
         if "401" in str(e) or "unauthorized" in str(e).lower():
             print("   This appears to be an authentication error.")
-            print("   Check your SOUNDSTRIPE_API_KEY_DEVELOPMENT in .env file")
+            print("   Check your SOUNDSTRIPE_API_KEY in .env file")
 
         return False
 

@@ -20,7 +20,7 @@ SECRET_KEY = env.str("SECRET_KEY")
 
 # API Keys from environment variables
 OPENAI_API_KEY = env.str("OPENAI_API_KEY", "")
-SOUNDSTRIPE_API_KEY_DEVELOPMENT = env.str("SOUNDSTRIPE_API_KEY_DEVELOPMENT", "")
+SOUNDSTRIPE_API_KEY = env.str("SOUNDSTRIPE_API_KEY", "")
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#debug
 # SECURITY WARNING: don't run with debug turned on in production!
@@ -101,13 +101,40 @@ TEMPLATES = [
 #         "NAME": BASE_DIR / "db.sqlite3",
 #     }
 # }
-DATABASES = {
-    "default": dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
-        conn_max_age=600,
-        ssl_require=True,
-    )
-}
+# Database configuration
+if os.getenv("DATABASE_URL"):
+    # Production: Use DATABASE_URL from Render (PostgreSQL with SSL)
+    import dj_database_url
+    DATABASES = {
+        "default": dj_database_url.config(
+            conn_max_age=600,
+            conn_health_checks=True,
+            ssl_require=True,
+        )
+    }
+elif os.getenv("USE_SQLITE", "").lower() == "true":
+    # Local development: Use SQLite (no SSL needed)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
+else:
+    # Local development: PostgreSQL with SSL disabled
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("DB_NAME", "lithium"),
+            "USER": os.getenv("DB_USER", "postgres"),
+            "PASSWORD": os.getenv("DB_PASSWORD", ""),
+            "HOST": os.getenv("DB_HOST", "localhost"),
+            "PORT": os.getenv("DB_PORT", "5432"),
+            "OPTIONS": {
+                "sslmode": "disable",  # Explicitly disable SSL for local PostgreSQL
+            },
+        }
+    }
 
 # Cache configuration for django-cache-memoize
 # https://docs.djangoproject.com/en/dev/topics/cache/

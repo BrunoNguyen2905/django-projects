@@ -24,7 +24,7 @@ env.read_env()
 if not settings.configured:
     settings.configure(
         OPENAI_API_KEY=env.str("OPENAI_API_KEY", ""),
-        SOUNDSTRIPE_API_KEY_DEVELOPMENT=env.str("SOUNDSTRIPE_API_KEY_DEVELOPMENT", ""),
+        SOUNDSTRIPE_API_KEY=env.str("SOUNDSTRIPE_API_KEY", ""),
         SECRET_KEY=env.str("SECRET_KEY", "test-key"),
         INSTALLED_APPS=['django.contrib.contenttypes'],
         USE_TZ=True,
@@ -195,10 +195,10 @@ def main():
         return
 
     # Full run needs both API keys
-    soundstripe_key = getattr(settings, 'SOUNDSTRIPE_API_KEY_DEVELOPMENT', '')
+    soundstripe_key = getattr(settings, 'SOUNDSTRIPE_API_KEY', '')
     if not soundstripe_key or soundstripe_key.startswith('your-'):
         print("❌ Error: Soundstripe API key not configured properly in .env file")
-        print("   Make sure SOUNDSTRIPE_API_KEY_DEVELOPMENT is set in your .env file")
+        print("   Make sure SOUNDSTRIPE_API_KEY is set in your .env file")
         sys.exit(1)
 
     print(f"🎵 Testing music search flow with query: \"{user_query}\"")

@@ -17,7 +17,7 @@ from search_orchestration.adapters.ai.prompts import (
     get_selection_instruction,
     get_explain_prompt_for_node,
 )
-from search_orchestration.adapters.ai.utils import song_to_context_item, format_filters_summary
+from search_orchestration.adapters.ai.utils import merge_selection_into, song_to_context_item, format_filters_summary, validate_and_normalize_selections
 from search_orchestration.adapters.ai.state import Taxonomy, Selection, SearchState
 from search_orchestration.adapters.ai.taxonomy import MUSIC_TAXONOMY
 from search_orchestration.adapters.soundstripe_adapter import soundstripe_search
@@ -25,8 +25,6 @@ from search_orchestration.adapters.soundstripe_adapter import soundstripe_search
 # Defaults for search loop
 DEFAULT_MIN_RESULTS = 20
 DEFAULT_MAX_ROUNDS = 3
-MAX_SELECTIONS = 5
-MAX_TERMS_PER_SELECTION = 5
 
 
 def generate_search_selections(
@@ -150,81 +148,6 @@ def explain_for_node(
     return "".join(parts).strip()
 
 
-@dataclass
-class SearchDebug:
-    rounds: List[Dict[str, Any]]
-
-
-def _allowed_terms_set(taxonomy: Taxonomy) -> Dict[str, Set[str]]:
-    return {k: set(v) for k, v in taxonomy.items()}
-
-
-def _merge_selection_into(target: Selection, source: Selection) -> None:
-    """Merge source selection into target (no duplicate terms per category)."""
-    for category, values in source.items():
-        if category not in target:
-            target[category] = []
-        for v in values:
-            if v and v not in target[category]:
-                target[category].append(v)
-
-
-def _dedupe_keep_order(terms: List[str]) -> List[str]:
-    """Return unique terms preserving first occurrence order."""
-    seen: Set[str] = set()
-    return [t for t in terms if t not in seen and not seen.add(t)]
-
-
-def validate_and_normalize_selections(
-    raw: Any,
-    *,
-    max_terms_total: int = MAX_TERMS_PER_SELECTION,
-) -> List[Selection]:
-    allowed_keys: Set[str] = set(MUSIC_TAXONOMY.keys())
-    allowed_terms: Dict[str, Set[str]] = _allowed_terms_set(MUSIC_TAXONOMY)
-
-    if not isinstance(raw, list):
-        raise ValueError("LLM output must be a JSON list.")
-    if len(raw) == 0:
-        raise ValueError("LLM output must contain at least 1 selection.")
-    if len(raw) > MAX_SELECTIONS:
-        raise ValueError(
-            f"LLM output contains too many selections ({len(raw)}), expected max {MAX_SELECTIONS}."
-        )
-
-    normalized: List[Selection] = []
-    priority_keys = ["genre", "mood", "characteristic", "instrument"]
-
-    for item in raw:
-        if not isinstance(item, dict):
-            raise ValueError("Each selection must be an object.")
-
-        clean: Selection = {}
-        for k, v in item.items():
-            if k not in allowed_keys or not isinstance(v, list):
-                continue
-            terms = [t for t in v if isinstance(
-                t, str) and t in allowed_terms.get(k, set())]
-            if terms:
-                clean[k] = _dedupe_keep_order(terms)
-
-        total_terms = sum(len(v) for v in clean.values())
-        if total_terms > max_terms_total:
-            trimmed: Selection = {}
-            remaining = max_terms_total
-            for k in priority_keys:
-                if k in clean and remaining > 0:
-                    take = clean[k][:remaining]
-                    if take:
-                        trimmed[k] = take
-                        remaining -= len(take)
-            clean = trimmed
-
-        normalized.append(clean)
-
-    return normalized
-
-
 # -----------------------------
 # LangGraph State + Graph
 # -----------------------------
@@ -289,22 +212,20 @@ def node_plan_round(state: SearchState) -> Dict[str, Any]:
     _emit(writer, type_="log", message="Planning your search filters…")
 
     # 1) Generate selections (blocking structured LLM call)
-    raw = generate_search_selections(
-        user_text,
-        broaden=broaden,
-        prior_counts=state.get("prior_counts") or [],
-    )
-
-    # 2) Validate + merge (same logic as your validate_and_merge node)
+    # Note: generate_search_selections already validates/normalizes internally
     try:
-        valid = [s for s in validate_and_normalize_selections(raw) if s]
+        valid = generate_search_selections(
+            user_text,
+            broaden=broaden,
+            prior_counts=state.get("prior_counts") or [],
+        )
     except Exception as e:
         _emit(writer, type_="log", message=f"Selection validation error: {e}")
         valid = []
 
     merged: Selection = {}
     for sel in valid:
-        _merge_selection_into(merged, sel)
+        merge_selection_into(merged, sel)
 
     # 3) One combined explanation (uses your get_explain_prompt_plan_round)
     _emit_explanation(
@@ -322,88 +243,10 @@ def node_plan_round(state: SearchState) -> Dict[str, Any]:
     return {
         "initialized": True,
         "broaden": broaden,
-        "selections_raw": raw,
+        "selections_raw": valid,
         "selections_valid": valid,
         "merged_selection": merged,
     }
-
-# def node_announce_start(state: SearchState) -> Dict[str, Any]:
-#     writer: StreamWriter = get_stream_writer()
-#     user_text: str = state.get("user_text") or ""
-#     # explanation = explain_for_node("announce_start", state)
-#     fallback = f"Starting search for: {user_text or '(no query)'}"
-#     # _emit(
-#     #     writer,
-#     #     type_="log",
-#     #     message=f"node_announce_start: {(explanation or fallback).strip()}",
-#     # )
-#     _emit_explanation(writer, state, fallback=fallback, node="node_announce_start")
-#     return {
-#         "user_text": user_text,
-#         "min_results": state.get("min_results", DEFAULT_MIN_RESULTS),
-#         "max_rounds": state.get("max_rounds", DEFAULT_MAX_ROUNDS),
-#         "round_idx": 0,
-#         "broaden": False,
-#         "prior_counts": None,
-#         "results": [],
-#         "seen_ids": [],  # JSON-safe
-#         "debug_rounds": [],
-#         "done": False,
-#         "stop_reason": None,
-#     }
-
-
-# def node_explain_strategy(state: SearchState) -> Dict[str, Any]:
-#     """Emit AI-generated explanation: we're rerunning the search process with broader filters (loop)."""
-#     writer = get_stream_writer()
-#     total = len(state.get("results") or [])
-#     explanation = explain_for_node("explain_strategy", state)
-#     fallback = (
-#         f"We're running the search again with broader filters to find more tracks (you have {total} so far)."
-#     )
-#     _emit(
-#         writer,
-#         type_="log",
-#         message=f"node_explain_strategy: {(explanation or fallback).strip()}",
-#     )
-#     return {"explanation": explanation}
-
-
-# def node_generate_selections(state: SearchState) -> Dict[str, Any]:
-#     writer = get_stream_writer()
-#     round_idx = int(state.get("round_idx", 0))
-#     broaden = bool(round_idx > 0)
-#     user_text = state.get("user_text") or ""
-
-#     _emit_explanation(writer, state, fallback="Choosing the right genres and moods for your request…", node="node_generate_selections")
-#     # explain_for_node("generate_selections", state)
-#     raw = generate_search_selections(
-#         user_text,
-#         broaden=broaden,
-#         prior_counts=state.get("prior_counts"),
-#     )
-#     return {"broaden": broaden, "selections_raw": raw}
-
-
-# def node_validate_and_merge(state: SearchState) -> Dict[str, Any]:
-#     writer = get_stream_writer()
-
-#     raw = state.get("selections_raw", [])
-#     try:
-#         valid = [s for s in validate_and_normalize_selections(raw) if s]
-#     except Exception as e:
-#         _emit(writer, type_="log", message=f"Selection validation error: {e}")
-#         valid = []
-
-#     merged: Selection = {}
-#     for sel in valid:
-#         _merge_selection_into(merged, sel)
-
-#     # Explain using this round's merged filters (state not updated until we return)
-#     # explain_for_node("validate_and_merge", state, extra={"merged_selection": merged})
-#     _emit_explanation(writer, state, fallback="Validating and merging selections…", node="node_validate_and_merge", extra={"merged_selection": merged})
-
-#     return {"selections_valid": valid, "merged_selection": merged}
 
 
 def node_soundstripe_search(state: SearchState) -> Dict[str, Any]:
@@ -430,7 +273,6 @@ def node_soundstripe_search(state: SearchState) -> Dict[str, Any]:
         node="node_soundstripe_search",
         extra={"songs_count": len(songs), "new_songs_count": len(new_songs)},
     )
-    # explain_for_node("soundstripe_search", state, extra={"songs_count": len(songs), "new_songs_count": len(new_songs)})
 
     if new_songs:
         _emit(
@@ -482,7 +324,7 @@ def node_record_debug(state: SearchState) -> Dict[str, Any]:
         fallback = f"This is the total we managed to find ({total_results} tracks). Presenting your results."
     _emit_explanation(writer, state, fallback=fallback,
                       node="node_record_debug")
-    # explain_for_node("record_debug", state)
+
     # When we're about to stop, emit a clear wrap-up so the user sees "we have enough" before "Search complete"
     if total_results >= min_results:
         _emit(
@@ -530,51 +372,6 @@ def node_finish(state: SearchState) -> Dict[str, Any]:
     return {"done": True}
 
 
-# def build_search_graph() -> Any:
-#     """
-#     Build & compile the LangGraph StateGraph for the search agent.
-
-#     Stream modes:
-#       - custom: progress logs + result batches
-#       - messages: LLM tokens (explanation + selection)
-#       - updates: state deltas per node (JSON-safe)
-#     """
-#     g: StateGraph[SearchState] = StateGraph(SearchState)
-
-#     g.add_node("announce_start", node_announce_start)
-#     g.add_node("explain_strategy", node_explain_strategy)
-#     g.add_node("generate_selections", node_generate_selections)
-#     g.add_node("validate_and_merge", node_validate_and_merge)
-#     g.add_node("soundstripe_search", node_soundstripe_search)
-#     g.add_node("record_debug", node_record_debug)
-#     g.add_node("finish", node_finish)
-#     # Combined node: announce_start + explain_strategy + generate_selections + validate_and_merge (optional path)
-#     # g.add_node("plan_round", node_plan_round)
-
-#     g.add_edge(START, "announce_start")
-#     g.add_edge("announce_start", "generate_selections")
-#     g.add_edge("generate_selections", "validate_and_merge")
-#     # g.add_edge(START, "plan_round")
-#     g.add_edge("validate_and_merge", "soundstripe_search")
-
-#     # g.add_edge("plan_round", "soundstripe_search")
-#     g.add_edge("soundstripe_search", "record_debug")
-
-#     g.add_conditional_edges(
-#         "record_debug",
-#         _should_continue,
-#         {
-#             "loop": "explain_strategy",
-#             "finish": "finish",
-#         },
-#     )
-#     # loop: re-run with broader filters
-#     g.add_edge("explain_strategy", "generate_selections")
-#     # g.add_edge("explain_strategy", "soundstripe_search")
-
-#     g.add_edge("finish", END)
-
-#     return g.compile()
 def build_search_graph() -> Any:
     g: StateGraph[SearchState] = StateGraph(SearchState)
 

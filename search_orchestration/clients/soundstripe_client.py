@@ -11,7 +11,7 @@ env = Env()
 env.read_env()
 
 # api_key = env.str("SOUNDSTRIPE_API_KEY")
-api_key = env.str("SOUNDSTRIPE_API_KEY_DEVELOPMENT")
+api_key = env.str("SOUNDSTRIPE_API_KEY")
 
 api_base = "https://api.soundstripe.com/v1"
 

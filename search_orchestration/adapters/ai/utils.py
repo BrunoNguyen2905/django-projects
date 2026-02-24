@@ -1,7 +1,11 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 import json
 
-from search_orchestration.adapters.ai.state import Selection
+from search_orchestration.adapters.ai.state import Selection, Taxonomy
+from search_orchestration.adapters.ai.taxonomy import MUSIC_TAXONOMY
+
+MAX_TERMS_PER_SELECTION = 3
+MAX_SELECTIONS = 4
 
 
 def song_to_context_item(song: Dict[str, Any]) -> Dict[str, Any]:
@@ -51,3 +55,73 @@ def message_chunk_content(message_chunk):
         except (json.JSONDecodeError, TypeError):
             pass
     return (raw if isinstance(raw, str) else str(raw)), False
+
+
+def _allowed_terms_set(taxonomy: Taxonomy) -> Dict[str, Set[str]]:
+    return {k: set(v) for k, v in taxonomy.items()}
+
+
+def merge_selection_into(target: Selection, source: Selection) -> None:
+    """Merge source selection into target (no duplicate terms per category)."""
+    for category, values in source.items():
+        if category not in target:
+            target[category] = []
+        for v in values:
+            if v and v not in target[category]:
+                target[category].append(v)
+
+
+def _dedupe_keep_order(terms: List[str]) -> List[str]:
+    """Return unique terms preserving first occurrence order."""
+    seen: Set[str] = set()
+    return [t for t in terms if t not in seen and not seen.add(t)]
+
+
+def validate_and_normalize_selections(
+    raw: Any,
+    *,
+    max_terms_total: int = MAX_TERMS_PER_SELECTION,
+) -> List[Selection]:
+    allowed_keys: Set[str] = set(MUSIC_TAXONOMY.keys())
+    allowed_terms: Dict[str, Set[str]] = _allowed_terms_set(MUSIC_TAXONOMY)
+
+    if not isinstance(raw, list):
+        raise ValueError("LLM output must be a JSON list.")
+    if len(raw) == 0:
+        raise ValueError("LLM output must contain at least 1 selection.")
+    if len(raw) > MAX_SELECTIONS:
+        raise ValueError(
+            f"LLM output contains too many selections ({len(raw)}), expected max {MAX_SELECTIONS}."
+        )
+
+    normalized: List[Selection] = []
+    priority_keys = ["genre", "mood", "characteristic", "instrument"]
+
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("Each selection must be an object.")
+
+        clean: Selection = {}
+        for k, v in item.items():
+            if k not in allowed_keys or not isinstance(v, list):
+                continue
+            terms = [t for t in v if isinstance(
+                t, str) and t in allowed_terms.get(k, set())]
+            if terms:
+                clean[k] = _dedupe_keep_order(terms)
+
+        total_terms = sum(len(v) for v in clean.values())
+        if total_terms > max_terms_total:
+            trimmed: Selection = {}
+            remaining = max_terms_total
+            for k in priority_keys:
+                if k in clean and remaining > 0:
+                    take = clean[k][:remaining]
+                    if take:
+                        trimmed[k] = take
+                        remaining -= len(take)
+            clean = trimmed
+
+        normalized.append(clean)
+
+    return normalized

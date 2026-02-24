@@ -123,7 +123,7 @@ $ docker compose exec web python manage.py createsuperuser
 From the project root, in a terminal:
 
 ```bash
-# 1. Ensure .env has OPENAI_API_KEY and SOUNDSTRIPE_API_KEY_DEVELOPMENT
+# 1. Ensure .env has OPENAI_API_KEY and SOUNDSTRIPE_API_KEY
 cd /path/to/lithium
 
 # 2. Full flow (LLM + Soundstripe, 3 rounds max, 1 API call per round)
@@ -144,6 +144,7 @@ curl -s -H "Authorization: Token YOUR_API_KEY" \
   -H "Accept: application/vnd.api+json" \
   "https://api.soundstripe.com/v1/songs?filter[q]=chill&filter[tags][genre]=Lo-Fi&filter[tags][mood]=Chill&page[size]=5" | jq .
 ```
+
 - Add environment variables. There are multiple packages but I personally prefer [environs](https://pypi.org/project/environs/).
 - Add [gunicorn](https://pypi.org/project/gunicorn/) as the production web server.
 - Update the [EMAIL_BACKEND](https://docs.djangoproject.com/en/4.0/topics/email/#module-django.core.mail) and connect with a mail provider.
