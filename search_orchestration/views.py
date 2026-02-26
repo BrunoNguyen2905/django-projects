@@ -1,13 +1,59 @@
 import json
 from django.contrib.auth.decorators import login_required
-from django.http import StreamingHttpResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 
 from search_orchestration.adapters.ai import (
     stream_orchestrated_search,
-    message_chunk_content,
     song_to_context_item,
 )
+from search_orchestration.adapters.ai.utils import decode_unicode
+from search_orchestration.adapters.soundstripe_adapter import soundstripe_search
+
+from search_orchestration.adapters.ai.taxonomy import MUSIC_TAXONOMY
+
+
+@login_required
+def search_tags_view(request):
+    """
+    Tag-based search: GET params q (optional), genre, mood, instrument, characteristic (multiple).
+    Returns JSON: { "items": [...], "active_filters": { genre: [], mood: [], ... } }.
+    """
+    q = (request.GET.get("q") or "").strip()
+    genre = request.GET.getlist("genre")
+    mood = request.GET.getlist("mood")
+    instrument = request.GET.getlist("instrument")
+    characteristic = request.GET.getlist("characteristic")
+
+    selection = {}
+    if genre:
+        selection["genre"] = [decode_unicode(g) for g in genre]
+    if mood:
+        selection["mood"] = [decode_unicode(m) for m in mood]
+    if instrument:
+        selection["instrument"] = [decode_unicode(i) for i in instrument]
+    if characteristic:
+        selection["characteristic"] = [
+            decode_unicode(c) for c in characteristic]
+
+    if not selection and not q:
+        return JsonResponse(
+            {"error": "Select at least one tag or enter search terms."},
+            status=400,
+        )
+
+    try:
+        songs = soundstripe_search(selection, q=q or None)
+        print('songs from soundstripe_search', songs)
+    except Exception as e:
+        return JsonResponse(
+            {"error": str(e)},
+            status=500,
+        )
+
+    items = [song_to_context_item(s) for s in songs]
+    active_filters = selection
+    return JsonResponse({"items": items, "active_filters": active_filters})
 
 
 @login_required
@@ -20,6 +66,10 @@ def search_view(request):
         "songs": [],
         "active_filters": {},
         "error": None,
+        "genres": MUSIC_TAXONOMY["genre"],
+        "instruments": MUSIC_TAXONOMY["instrument"],
+        "characteristics": MUSIC_TAXONOMY["characteristic"],
+        "moods": MUSIC_TAXONOMY["mood"],
     })
 
 

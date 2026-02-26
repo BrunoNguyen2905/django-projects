@@ -8,6 +8,7 @@ from search_orchestration.clients.soundstripe_client import get_songs
 
 Selection = Dict[str, List[str]]
 
+
 def selection_to_get_songs_kwargs(selection: Selection) -> Dict[str, Any]:
     """
     Convert orchestrator selection dict to Soundstripe get_songs kwargs.
@@ -29,7 +30,8 @@ def selection_to_get_songs_kwargs(selection: Selection) -> Dict[str, Any]:
 
     print('kwargs from selection_to_get_songs_kwargs', kwargs)
     return kwargs
-  
+
+
 def soundstripe_search(
     selection: Selection,
     *,
@@ -44,16 +46,17 @@ def soundstripe_search(
     """
     kwargs = selection_to_get_songs_kwargs(selection)
 
-    # Optional free-text query
-    # if q:
-    #     kwargs["q"] = q
+    # Optional free-text query (search terms from tag-based search)
+    if q:
+        kwargs["q"] = q.strip()
 
-    # Your get_songs hardcodes page[size]=20 internally.
+    # Your get_songs hardcodes page[size]=100 internally.
     # If you later add paging, this adapter is where you'll pass it in.
 
     resp = get_songs(**kwargs)
     print('resp from soundstripe_search', len(resp["data"]))
     # Your get_songs() returns the response with `data` list of songs, flattened.
+
     songs = resp.get("data", [])
     if not isinstance(songs, list):
         return []

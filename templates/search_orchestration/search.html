@@ -3,41 +3,156 @@
 {% block title %}Music Search{% endblock title %}
 
 {% block content %}
-<div class="container py-4">
-  <h1 class="mb-4">Music Search</h1>
-
-  <div data-signals="{sending:false}">
-    <!-- IMPORTANT: keep method=post for CSRF if you still use it elsewhere,
-         but this form is intercepted by JS for streaming -->
-    <form id="searchForm" method="post" action="{% url 'search' %}" class="mb-4">
-      {% csrf_token %}
-      <div class="row g-2 align-items-end">
-        <div class="col-md-8">
-          <label for="q" class="form-label">Describe the music you want</label>
-          <input
-            type="text"
-            name="q"
-            id="q"
-            class="form-control form-control-lg"
-            placeholder="e.g. acoustic beautiful chill lofi"
-            value="{{ query }}"
-            autofocus
-          />
+<div class="container-fluid">
+  <!-- Search Form - Full Width at Top -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="card-title mb-0">Search Music</h5>
         </div>
-        <div class="col-md-4">
-          <button
-            id="searchBtn"
-            type="submit"
-            class="btn btn-primary btn-lg w-100"
-            data-indicator:sending
-            data-attr:disabled="$sending ? 'disabled' : null"
-          >
-            <span data-show="!$sending">Search</span>
-            <span data-show="$sending">Searching...</span>
-          </button>
+        <div class="card-body">
+          <!-- Search mode: 2 boxes (selected = rounded pill, unselected = plain text) -->
+          <div class="search-mode-row d-flex align-items-center gap-3 mb-3" id="searchTabs" role="tablist">
+            <button class="search-mode-btn active" id="llm-tab" data-bs-toggle="tab" data-bs-target="#llm-search" type="button" role="tab" aria-controls="llm-search" aria-selected="true">
+              AI-Powered Search
+            </button>
+            <button class="search-mode-btn" id="filter-tab" data-bs-toggle="tab" data-bs-target="#filter-search" type="button" role="tab" aria-controls="filter-search" aria-selected="false">
+              Tag-Based Search
+            </button>
+          </div>
+
+          <!-- Tab Content -->
+          <div class="tab-content" id="searchTabsContent">
+            <!-- AI-Powered Search Tab -->
+            <div class="tab-pane fade show active" id="llm-search" role="tabpanel" aria-labelledby="llm-tab">
+              <form id="llm-search-form" method="get">
+                <div class="mb-3">
+                  <label for="q" class="form-label">Describe Your Music</label>
+                  <textarea class="form-control" id="q" name="q" rows="3" placeholder="E.g., 'upbeat electronic music for a party' or 'calm acoustic guitar for studying'">{{ query|default:'' }}</textarea>
+                  <div class="form-text">Use natural language to describe the music you want</div>
+                </div>
+                <button type="submit" class="btn btn-primary w-100" id="llm-search-btn">
+                  <span id="llm-search-text">AI Search</span>
+                  <div id="llm-search-spinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                  </div>
+                </button>
+              </form>
+            </div>
+
+            <!-- Tag-Based Search Tab -->
+            <div class="tab-pane fade" id="filter-search" role="tabpanel" aria-labelledby="filter-tab">
+              <form id="filter-search-form">
+                <div class="mb-3">
+                  <label for="search-term" class="form-label">Search Terms (Optional)</label>
+                  <input type="text" class="form-control" id="search-term" name="search_term" placeholder="Additional keywords...">
+                </div>
+
+                <!-- Horizontal filter bar -->
+                <div class="tag-filter-bar rounded-2 px-3 py-2 d-flex flex-wrap align-items-center gap-2">
+                  <span class="tag-filter-icon me-1" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                  </span>
+                  <button type="button" class="tag-filter-category btn btn-link p-0 text-dark text-decoration-none d-flex align-items-center gap-1" data-category="genre" aria-expanded="false" aria-controls="tag-panel-genre">
+                    Genre <span class="tag-filter-chevron">&#9660;</span>
+                    <span class="tag-filter-dot badge rounded-pill bg-secondary tag-category-dot tag-category-dot-genre d-none">0</span>
+                  </button>
+                  <button type="button" class="tag-filter-category btn btn-link p-0 text-dark text-decoration-none d-flex align-items-center gap-1" data-category="mood" aria-expanded="false" aria-controls="tag-panel-mood">
+                    Mood <span class="tag-filter-chevron">&#9660;</span>
+                    <span class="tag-filter-dot badge rounded-pill bg-secondary tag-category-dot tag-category-dot-mood d-none">0</span>
+                  </button>
+                  <button type="button" class="tag-filter-category btn btn-link p-0 text-dark text-decoration-none d-flex align-items-center gap-1" data-category="instrument" aria-expanded="false" aria-controls="tag-panel-instrument">
+                    Instrument <span class="tag-filter-chevron">&#9660;</span>
+                    <span class="tag-filter-dot badge rounded-pill bg-secondary tag-category-dot tag-category-dot-instrument d-none">0</span>
+                  </button>
+                  <button type="button" class="tag-filter-category btn btn-link p-0 text-dark text-decoration-none d-flex align-items-center gap-1" data-category="characteristic" aria-expanded="false" aria-controls="tag-panel-characteristic">
+                    Characteristic <span class="tag-filter-chevron">&#9660;</span>
+                    <span class="tag-filter-dot badge rounded-pill bg-secondary tag-category-dot tag-category-dot-characteristic d-none">0</span>
+                  </button>
+                </div>
+
+                <!-- Expandable tag panels (one visible at a time) -->
+                <div id="tag-filter-panels" class="tag-filter-panels mt-2" style="display: none;">
+                  <div id="tag-panel-genre" class="tag-panel rounded-2 p-3 bg-light" data-category="genre" style="display: none;">
+                    <div class="tag-list d-flex flex-wrap gap-2 mb-3">
+                      {% for genre in genres %}
+                      <button type="button" class="tag-option btn btn-sm rounded-pill border" data-category="genre" data-value="{{ genre|escapejs }}">{{ genre }}</button>
+                      {% endfor %}
+                    </div>
+                    <div class="active-filters-row mb-2" id="active-filters-genre">
+                      <span class="text-muted small me-2">Selected:</span>
+                      <span class="active-tags-in-panel d-flex flex-wrap gap-1" data-category="genre"></span>
+                    </div>
+                  </div>
+                  <div id="tag-panel-mood" class="tag-panel rounded-2 p-3 bg-light" data-category="mood" style="display: none;">
+                    <div class="tag-list d-flex flex-wrap gap-2 mb-3">
+                      {% for mood in moods %}
+                      <button type="button" class="tag-option btn btn-sm rounded-pill border" data-category="mood" data-value="{{ mood|escapejs }}">{{ mood }}</button>
+                      {% endfor %}
+                    </div>
+                    <div class="active-filters-row mb-2" id="active-filters-mood">
+                      <span class="text-muted small me-2">Selected:</span>
+                      <span class="active-tags-in-panel d-flex flex-wrap gap-1" data-category="mood"></span>
+                    </div>
+                  </div>
+                  <div id="tag-panel-instrument" class="tag-panel rounded-2 p-3 bg-light" data-category="instrument" style="display: none;">
+                    <div class="tag-list d-flex flex-wrap gap-2 mb-3">
+                      {% for instrument in instruments %}
+                      <button type="button" class="tag-option btn btn-sm rounded-pill border" data-category="instrument" data-value="{{ instrument|escapejs }}">{{ instrument }}</button>
+                      {% endfor %}
+                    </div>
+                    <div class="active-filters-row mb-2" id="active-filters-instrument">
+                      <span class="text-muted small me-2">Selected:</span>
+                      <span class="active-tags-in-panel d-flex flex-wrap gap-1" data-category="instrument"></span>
+                    </div>
+                  </div>
+                  <div id="tag-panel-characteristic" class="tag-panel rounded-2 p-3 bg-light" data-category="characteristic" style="display: none;">
+                    <div class="tag-list d-flex flex-wrap gap-2 mb-3">
+                      {% for characteristic in characteristics %}
+                      <button type="button" class="tag-option btn btn-sm rounded-pill border" data-category="characteristic" data-value="{{ characteristic|escapejs }}">{{ characteristic }}</button>
+                      {% endfor %}
+                    </div>
+                    <div class="active-filters-row mb-2" id="active-filters-characteristic">
+                      <span class="text-muted small me-2">Selected:</span>
+                      <span class="active-tags-in-panel d-flex flex-wrap gap-1" data-category="characteristic"></span>
+                    </div>
+                  </div>
+
+                  <!-- Active filters (all categories) -->
+                  <div class="active-filters-all mb-3">
+                    <span class="text-muted small me-2">Active filters:</span>
+                    <span id="active-filters-pills" class="d-flex flex-wrap gap-1"></span>
+                  </div>
+
+                  <!-- CTAs -->
+                  <div class="d-flex justify-content-end gap-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="tag-filter-close">
+                      <span aria-hidden="true">&#9650;</span> Close
+                    </button>
+                    <button type="button" class="btn btn-danger btn-sm" id="tag-filter-clear">
+                      <span aria-hidden="true">&times;</span> Clear filters
+                    </button>
+                  </div>
+                </div>
+
+                <button type="button" class="btn btn-success w-100 mt-3" id="filter-search-btn">
+                  <span id="filter-search-text">Search with Tags</span>
+                  <div id="filter-search-spinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                  </div>
+                </button>
+              </form>
+            </div>
+          </div>
         </div>
       </div>
-    </form>
+    </div>
+  </div>
+
+  <!-- Results Section - Full Width Below -->
+  <div class="row">
+    <div class="col-12">
 
     <p class="text-muted mb-4" data-show="$sending">Searching...</p>
 
@@ -105,18 +220,216 @@
         from { opacity: 0; transform: translateY(-4px); }
         to { opacity: 1; transform: translateY(0); }
       }
-    </style>
 
-    {% comment %} LLM output (token stream) – commented out
-    <div class="col-12 col-lg-6">
-      <div class="card">
-        <div class="card-header"><span class="fw-semibold">LLM output (token stream)</span></div>
-        <div class="card-body">
-          <pre id="thinkingPre" class="mb-0" style="white-space: pre-wrap; max-height: 260px; overflow:auto;"></pre>
-        </div>
-      </div>
-    </div>
-    {% endcomment %}
+      /* Search mode: 2 boxes (All / AI-generated style) */
+      .search-mode-row {
+        flex-wrap: wrap;
+      }
+      .search-mode-btn {
+        padding: 0.4rem 1rem;
+        font-size: 0.95rem;
+        color: #495057;
+        background: transparent;
+        border: none;
+        border-radius: 9999px;
+        cursor: pointer;
+        transition: background-color 0.15s, color 0.15s;
+      }
+      .search-mode-btn:hover {
+        color: #212529;
+      }
+      .search-mode-btn.active {
+        background: #DEDEDE;
+        color: #495057;
+        font-weight: 500;
+        box-shadow: 0 2px 6px rgba(13, 110, 253, 0.4);
+      }
+
+      /* Tag filter bar (horizontal filter UI) */
+      .tag-filter-bar {
+        background: var(--bs-tertiary-bg, #e9ecef);
+        border: 1px solid var(--bs-border-color-translucent, rgba(0,0,0,.08));
+      }
+      .tag-filter-category {
+        font-size: 0.9rem;
+      }
+      .tag-filter-category[aria-expanded="true"] .tag-filter-chevron {
+        transform: rotate(180deg);
+      }
+      .tag-filter-chevron {
+        display: inline-block;
+        transition: transform 0.2s;
+        font-size: 0.7rem;
+      }
+      .tag-filter-dot {
+        font-size: 0.65rem;
+        min-width: 1.1rem;
+      }
+      .tag-option {
+        background: #f8f9fa;
+        color: #495057;
+      }
+      .tag-option:hover {
+        background: #e9ecef;
+      }
+      .tag-option.selected {
+        background: #495057;
+        color: #fff;
+        border-color: #495057 !important;
+      }
+      .active-filter-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        background: #495057;
+        color: #fff;
+        padding: 0.2rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.8rem;
+      }
+      .active-filter-pill .remove-tag {
+        cursor: pointer;
+        opacity: 0.9;
+      }
+      .active-filter-pill .remove-tag:hover {
+        opacity: 1;
+      }
+
+      /* Song item card: horizontal layout with art, title/artist, progress/duration/BPM, tags, actions; audio controls on second row */
+      .song-item-card {
+        position: relative;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.75rem 1rem;
+        background: var(--bs-body-bg, #fff);
+        border: 1px solid var(--bs-border-color-translucent, rgba(0,0,0,.08));
+        border-radius: 0.5rem;
+      }
+      .song-item-audio-controls {
+        display: flex;
+        height: 40px;
+        margin-top: 0.25rem;
+      }
+      .song-item-audio-controls audio {
+        width: 100%;
+        height: 100%;
+        accent-color: #ec4899;
+      }
+      .song-item-art {
+        flex-shrink: 0;
+        width: 82px;
+        height: 82px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
+        position: relative;
+        overflow: hidden;
+      }
+      .song-item-art img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .song-item-info {
+        flex: 0 1 auto;
+        min-width: 0;
+      }
+      .song-item-title-row {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+      }
+      .song-item-title {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: var(--bs-body-color, #212529);
+      }
+      .song-item-badge-new {
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: #ec4899;
+      }
+      .song-item-artist {
+        font-size: 0.8125rem;
+        color: var(--bs-secondary-color, #6c757d);
+        margin-top: 0.15rem;
+      }
+      .song-item-meta {
+        flex: 0 0 auto;
+        min-width: 60px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.15rem;
+      }
+      .song-item-duration {
+        font-size: 0.75rem;
+        color: var(--bs-secondary-color, #6c757d);
+      }
+      .song-item-bpm {
+        font-size: 0.75rem;
+        color: var(--bs-secondary-color, #6c757d);
+      }
+      .song-item-tags {
+        flex: 1 1 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+      }
+      .song-item-tags-line {
+        font-size: 0.8125rem;
+        color: var(--bs-secondary-color, #6c757d);
+
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .song-item-actions {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .song-item-actions .btn-link {
+        color: var(--bs-secondary-color, #6c757d);
+        padding: 0.25rem;
+        text-decoration: none;
+      }
+      .song-item-actions .btn-link:hover {
+        color: var(--bs-body-color, #212529);
+      }
+      .play-btn {
+        position: absolute;
+        top: 62px;
+        left: 15px;
+        background-color: #ff4da6;
+        border: none;
+        color: white;
+        border-radius: 8px;
+        cursor: pointer;
+        {% comment %} font-size: 16px; {% endcomment %}
+        outline: none;
+        box-shadow: none;
+        -webkit-tap-highlight-color: transparent;
+        width: 32px;
+        height: 32px;
+        transition: 0.2s ease;
+      }
+      .play-btn:focus {
+        outline: none;
+      }
+      
+      .play-btn:hover {
+        background-color: #e60073;
+      }
+      .progress-bar {
+        cursor: pointer;
+        width: 105px;
+        accent-color: #ff4da6; /* makes it pink */
+      }
+    </style>
 
     {% if error %}
     <div class="alert alert-danger" role="alert">{{ error }}</div>
@@ -132,272 +445,629 @@
     <h2 class="h5 mb-3">Tracks (<span id="trackCount">0</span>)</h2>
 
     <div id="resultsWrap" class="row g-3">
-      {# Existing server-rendered fallback results (if any) #}
-      {% if songs %}
-        <script>
-          // If server rendered results exist, we’ll initialize count on load.
-          window.__INITIAL_SONGS__ = {{ songs|safe }};
-          window.__INITIAL_FILTERS__ = {{ active_filters|default:"{}"|safe }};
-        </script>
-
-        {% for song in songs %}
-        <div class="col-12">
-          <div class="card">
-            <div class="card-body">
-              <div class="d-flex align-items-start gap-3 flex-wrap">
-                {% for artist in song.artists %}
-                  {% if artist.image %}
-                  <img
-                    src="{{ artist.image }}"
-                    alt="{{ artist.name }}"
-                    class="rounded-circle flex-shrink-0"
-                    width="48"
-                    height="48"
-                    style="object-fit: cover;"
-                  />
-                  {% endif %}
-                {% endfor %}
-                <div class="flex-grow-1 min-w-0">
-                  <h3 class="h6 card-title mb-1">{{ song.title }}</h3>
-                  <p class="card-text text-muted small mb-2">
-                    {% for artist in song.artists %}{% if not forloop.first %}, {% endif %}{{ artist.name }}{% endfor %}
-                  </p>
-                  {% if song.primary_audio_mp3 %}
-                  <audio
-                    controls
-                    preload="metadata"
-                    class="w-100"
-                    style="max-width: 400px; height: 40px;"
-                  >
-                    <source src="{{ song.primary_audio_mp3 }}" type="audio/mpeg" />
-                    Your browser does not support the audio element.
-                  </audio>
-                  {% else %}
-                  <span class="text-muted small">No preview</span>
-                  {% endif %}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        {% endfor %}
-      {% else %}
-        <p id="noResultsMsg" class="text-muted">No tracks yet. Run a search.</p>
-      {% endif %}
+      <p id="noResultsMsg" class="text-muted">No tracks yet. Run a search.</p>
     </div>
+
+    <!-- Song card template: cloned and filled by addSongCard() when songs array is populated -->
+    <template id="song-card-tpl">
+      <div class="song-item-card">
+        <div class="song-item-art">
+          <img data-slot="art" src="" alt="" style="display: none;" />
+        </div>
+        <div class="song-item-info">
+          <div class="song-item-title-row">
+            <span class="song-item-title" data-slot="title"></span>
+          </div>
+          <p class="song-item-artist mb-0" data-slot="artist"></p>
+        </div>
+        <div class="song-item-audio-controls" data-slot="audio"></div>
+        <div class="song-item-meta">
+          <div class="song-item-duration" data-slot="duration"></div>
+          <div class="song-item-bpm" data-slot="bpm"></div>
+        </div>
+        <div class="song-item-tags">
+          <div class="song-item-tags-line" data-slot="tags-line" style=""></div>
+        </div>
+        <div class="song-item-actions">
+          <a href="#" class="btn-link" title="Add to playlist"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></a>
+          <a href="#" class="btn-link" title="Like"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></a>
+          <a href="#" class="btn-link" title="Add"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></a>
+          <a href="#" class="btn-link" title="More"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></a>
+        </div>
+      </div>
+    </template>
   </div>
 </div>
 
 <script>
-(function () {
-  const form = document.getElementById("searchForm");
-  const qInput = document.getElementById("q");
-  const btn = document.getElementById("searchBtn");
-
-  const thinkingPanel = document.getElementById("thinkingPanel");
-  const thinkingHistory = document.getElementById("thinkingHistory");
-  const clearLogsBtn = document.getElementById("clearLogsBtn");
-
-  const resultsWrap = document.getElementById("resultsWrap");
-  const trackCountEl = document.getElementById("trackCount");
-  const noResultsMsg = document.getElementById("noResultsMsg");
-
-  const filtersWrap = document.getElementById("filtersWrap");
-  const filtersBadges = document.getElementById("filtersBadges");
-
-  let es = null;
-  let count = 0;
-
-  function setSending(isSending) {
-    // Keep your data-signals behavior, but also enforce UI state here:
-    btn.disabled = isSending;
-    btn.querySelectorAll("[data-show]").forEach(() => {}); // harmless; signals will handle
-    if (isSending) {
-      btn.innerText = "Searching...";
-    } else {
-      btn.innerText = "Search";
-    }
-  }
-
-  function appendProgressLine(line) {
-    const text = (line || "").trim();
-    if (!text) return;
-    const li = document.createElement("li");
-    li.textContent = text;
-    thinkingHistory.appendChild(li);
-    thinkingHistory.scrollTop = thinkingHistory.scrollHeight;
-    thinkingPanel.style.display = "";
-    thinkingPanel.classList.remove("idle");
-  }
-
-  function clearResults() {
-    // remove all existing result cards (keep only the noResults paragraph if present)
-    resultsWrap.querySelectorAll(".col-12").forEach(n => n.remove());
-    if (noResultsMsg) noResultsMsg.remove();
-    count = 0;
-    trackCountEl.textContent = "0";
-  }
-
-  function addSongCard(song) {
-    // song fields: id, title, artists[{name,image}], primary_audio_mp3
-    const col = document.createElement("div");
-    col.className = "col-12";
-
-    const artists = Array.isArray(song.artists) ? song.artists : [];
-    const artistNames = artists.map(a => a?.name).filter(Boolean).join(", ");
-
-    const artistImgsHtml = artists
-      .filter(a => a?.image)
-      .slice(0, 5)
-      .map(a => `
-        <img
-          src="${a.image}"
-          alt="${(a.name || "").replace(/"/g, "&quot;")}"
-          class="rounded-circle flex-shrink-0"
-          width="48"
-          height="48"
-          style="object-fit: cover;"
-        />
-      `).join("");
-
-    const audioHtml = song.primary_audio_mp3
-      ? `<audio controls preload="metadata" class="w-100" style="max-width: 400px; height: 40px;">
-           <source src="${song.primary_audio_mp3}" type="audio/mpeg" />
-           Your browser does not support the audio element.
-         </audio>`
-      : `<span class="text-muted small">No preview</span>`;
-
-    col.innerHTML = `
-      <div class="card">
-        <div class="card-body">
-          <div class="d-flex align-items-start gap-3 flex-wrap">
-            ${artistImgsHtml}
-            <div class="flex-grow-1 min-w-0">
-              <h3 class="h6 card-title mb-1">${song.title || "Track"}</h3>
-              <p class="card-text text-muted small mb-2">${artistNames}</p>
-              ${audioHtml}
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    resultsWrap.appendChild(col);
-  }
-
-  function renderFilters(filtersObj) {
-    if (!filtersObj || typeof filtersObj !== "object") return;
-    filtersBadges.innerHTML = "";
-    const entries = Object.entries(filtersObj);
-    if (!entries.length) {
-      filtersWrap.style.display = "none";
-      return;
-    }
-    for (const [category, terms] of entries) {
-      const span = document.createElement("span");
-      span.className = "badge bg-secondary me-1 mb-1";
-      const joined = Array.isArray(terms) ? terms.join(", ") : String(terms);
-      span.textContent = `${category.charAt(0).toUpperCase() + category.slice(1)}: ${joined}`;
-      filtersBadges.appendChild(span);
-    }
-    filtersWrap.style.display = "";
-  }
-
-  function closeStream() {
-    if (es) {
-      es.close();
-      es = null;
-    }
-  }
-
-  clearLogsBtn?.addEventListener("click", () => {
-    thinkingHistory.innerHTML = "";
-    thinkingPanel.style.display = "none";
-    thinkingPanel.classList.add("idle");
-    console.log("[UI] cleared progress");
-  });
-
-  // Initialize count for server-rendered results (fallback)
-  document.addEventListener("DOMContentLoaded", () => {
-    const initial = window.__INITIAL_SONGS__;
-    if (Array.isArray(initial) && initial.length) {
-      count = initial.length;
-      trackCountEl.textContent = String(count);
-    }
-    renderFilters(window.__INITIAL_FILTERS__);
-  });
-
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const q = (qInput.value || "").trim();
-    if (!q) return;
-
-    // reset UI – show thinking panel with animated dots and empty list
-    thinkingHistory.innerHTML = "";
-    thinkingPanel.style.display = "";
-    thinkingPanel.classList.remove("idle");
-    filtersWrap.style.display = "none";
-    filtersBadges.innerHTML = "";
-    clearResults();
-
-    closeStream();
-    setSending(true);
-
-    const url = "{% url 'search_stream' %}" + "?q=" + encodeURIComponent(q);
-    console.log("[SSE] connecting:", url);
-
-    es = new EventSource(url);
-
-    es.addEventListener("log", (evt) => {
-      const data = JSON.parse(evt.data);
-      appendProgressLine(data.message || "");
-      console.log("[SSE log]", data);
-    });
-
-    es.addEventListener("results", (evt) => {
-      const data = JSON.parse(evt.data);
-      const items = data.items || [];
-      console.log("[SSE results]", { count: items.length, sample: items[0] });
-
-      if (items.length) {
-        for (const song of items) addSongCard(song);
-        count += items.length;
-        trackCountEl.textContent = String(count);
+  (function () {
+    // -----------------------------
+    // DOM helpers
+    // -----------------------------
+    const $ = (sel, root = document) => root.querySelector(sel);
+    const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  
+    // -----------------------------
+    // Elements
+    // -----------------------------
+    const llmForm = $("#llm-search-form");
+    const qInput = $("#q");
+    const llmBtn = $("#llm-search-btn");
+  
+    const filterBtn = $("#filter-search-btn");
+    const thinkingPanel = $("#thinkingPanel");
+    const thinkingHistory = $("#thinkingHistory");
+    const clearLogsBtn = $("#clearLogsBtn");
+  
+    const resultsWrap = $("#resultsWrap");
+    const trackCountEl = $("#trackCount");
+    const filtersWrap = $("#filtersWrap");
+    const filtersBadges = $("#filtersBadges");
+  
+    const tagFilterPanels = $("#tag-filter-panels");
+    const tagFilterClose = $("#tag-filter-close");
+    const tagFilterClear = $("#tag-filter-clear");
+    const activeFiltersPills = $("#active-filters-pills");
+  
+    let es = null;
+    let count = 0;
+  
+    // audio: keep only one playing at a time (no need to query all audios each time)
+    let currentlyPlayingAudio = null;
+  
+    // -----------------------------
+    // UI utilities
+    // -----------------------------
+    function setButtonLoading(btn, isLoading, textElId, spinnerElId, idleText, loadingText) {
+      btn.disabled = isLoading;
+      const textEl = $("#" + textElId);
+      const spinnerEl = $("#" + spinnerElId);
+      if (isLoading) {
+        if (textEl) textEl.textContent = loadingText;
+        if (spinnerEl) spinnerEl.classList.remove("d-none");
+      } else {
+        if (textEl) textEl.textContent = idleText;
+        if (spinnerEl) spinnerEl.classList.add("d-none");
       }
-    });
-
-    es.addEventListener("state", (evt) => {
-      // Optional: uncomment if you want noisy state logs
-      // console.log("[SSE state]", JSON.parse(evt.data));
-    });
-
-    // explain_token / llm_token no longer displayed (LLM token stream section removed)
-
-    es.addEventListener("error", (evt) => {
+    }
+  
+    function setSending(isSending) {
+      setButtonLoading(
+        llmBtn,
+        isSending,
+        "llm-search-text",
+        "llm-search-spinner",
+        "AI Search",
+        "Searching..."
+      );
+    }
+  
+    function showThinkingPanel(show) {
+      if (!thinkingPanel) return;
+      thinkingPanel.style.display = show ? "" : "none";
+      thinkingPanel.classList.toggle("idle", !show);
+    }
+  
+    function appendProgressLine(line) {
+      const text = (line || "").trim();
+      if (!text) return;
+      const li = document.createElement("li");
+      li.textContent = text;
+      thinkingHistory.appendChild(li);
+      thinkingHistory.scrollTop = thinkingHistory.scrollHeight;
+      showThinkingPanel(true);
+    }
+  
+    function removeNoResultsMessage() {
+      const el = $("#noResultsMsg");
+      if (el) el.remove();
+    }
+  
+    function clearResults() {
+      $$(".col-12", resultsWrap).forEach(n => n.remove());
+      removeNoResultsMessage();
+      count = 0;
+      trackCountEl.textContent = "0";
+    }
+  
+    function closeStream() {
+      if (es) {
+        es.close();
+        es = null;
+      }
+    }
+  
+    async function fetchJson(url) {
+      const res = await fetch(url, { method: "GET", headers: { Accept: "application/json" } });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, data };
+    }
+  
+    // -----------------------------
+    // Filters badges (top "Active filters" row under results header)
+    // -----------------------------
+    function renderFilters(filtersObj) {
+      filtersBadges.innerHTML = "";
+      if (!filtersObj || typeof filtersObj !== "object") {
+        filtersWrap.style.display = "none";
+        return;
+      }
+      const entries = Object.entries(filtersObj).filter(([_, v]) => {
+        if (Array.isArray(v)) return v.length > 0;
+        return v != null && String(v).trim() !== "";
+      });
+  
+      if (!entries.length) {
+        filtersWrap.style.display = "none";
+        return;
+      }
+  
+      for (const [category, terms] of entries) {
+        const span = document.createElement("span");
+        span.className = "badge bg-secondary me-1 mb-1";
+        const joined = Array.isArray(terms) ? terms.join(", ") : String(terms);
+        span.textContent = `${category.charAt(0).toUpperCase() + category.slice(1)}: ${joined}`;
+        filtersBadges.appendChild(span);
+      }
+      filtersWrap.style.display = "";
+    }
+  
+    // -----------------------------
+    // Song cards
+    // -----------------------------
+    function tagLine(tags) {
+      const list = Array.isArray(tags) ? tags.filter(Boolean) : [];
+      if (!list.length) return "";
+    
+      const limited = list.slice(0, 4);
+      return limited.join(", ") + (list.length > 4 ? "..." : "");
+    }
+  
+    function setSlot(parent, name, value) {
+      const el = parent.querySelector("[data-slot=" + name + "]");
+      if (!el) return;
+      el.textContent = value != null ? String(value) : "";
+      if (name === "bpm") el.style.display = (value !== "" && value != null) ? "" : "none";
+    }
+  
+    function createAudioControls(audio, audioSlot) {
+      // icons
+      const playIcon = `
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+          <polygon points="5,3 19,12 5,21"></polygon>
+        </svg>
+      `;
+      const pauseIcon = `
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="6" y="5" width="4" height="14"></rect>
+          <rect x="14" y="5" width="4" height="14"></rect>
+        </svg>
+      `;
+  
+      const button = document.createElement("button");
+      button.className = "play-btn";
+      button.type = "button";
+      button.setAttribute("aria-label", "Play preview");
+  
+      const progress = document.createElement("input");
+      progress.type = "range";
+      progress.min = 0;
+      progress.value = 0;
+      progress.className = "progress-bar";
+      progress.setAttribute("aria-label", "Audio progress");
+  
+      const updateButton = () => {
+        button.innerHTML = audio.paused ? playIcon : pauseIcon;
+        button.setAttribute("aria-label", audio.paused ? "Play preview" : "Pause preview");
+      };
+  
+      // Toggle play/pause
+      button.addEventListener("click", () => {
+        audio.paused ? audio.play() : audio.pause();
+      });
+  
+      // Keep only one audio playing
+      audio.addEventListener("play", () => {
+        if (currentlyPlayingAudio && currentlyPlayingAudio !== audio) {
+          currentlyPlayingAudio.pause();
+        }
+        currentlyPlayingAudio = audio;
+        updateButton();
+      });
+  
+      audio.addEventListener("pause", () => {
+        updateButton();
+        if (currentlyPlayingAudio === audio) {
+          currentlyPlayingAudio = null;
+        }
+      });
+  
+      audio.addEventListener("ended", () => {
+        updateButton();
+        if (currentlyPlayingAudio === audio) {
+          currentlyPlayingAudio = null;
+        }
+      });
+  
+      // Progress updates
+      audio.addEventListener("timeupdate", () => {
+        progress.value = (audio.currentTime / audio.duration) * 100 || 0;
+      });
+  
+      progress.addEventListener("input", () => {
+        if (!audio.duration) return;
+        audio.currentTime = (progress.value / 100) * audio.duration;
+      });
+  
+      // initial render
+      updateButton();
+  
+      audioSlot.appendChild(button);
+      audioSlot.appendChild(audio);
+      audioSlot.appendChild(progress);
+    }
+  
+    function addSongCard(song) {
+      console.log("song", song.tags);
+      const tpl = $("#song-card-tpl");
+      if (!tpl || !tpl.content) return;
+  
+      const card = tpl.content.cloneNode(true);
+  
+      const artists = Array.isArray(song.artists) ? song.artists : [];
+      const artistNames = artists.map(a => a?.name).filter(Boolean).join(", ");
+  
+      const tags = song.tags || {};
+      const line = tagLine([].concat(tags.genre || [], tags.instrument || [], tags.mood || [], tags.characteristic || []));
+  
+      setSlot(card, "title", song.title || "Track");
+      setSlot(card, "artist", artistNames);
+      setSlot(card, "duration", song.duration_display || "");
+      setSlot(card, "bpm", song.bpm != null ? String(song.bpm) + "BPM" : "");
+  
+      const artEl = card.querySelector("[data-slot=art]");
+      if (artEl && artists[0]?.image) {
+        artEl.src = artists[0].image;
+        artEl.style.display = "";
+      }
+  
+      const tagsLine = card.querySelector("[data-slot=tags-line]");
+      if (tagsLine) {
+        tagsLine.textContent = line || "";
+        tagsLine.style.display = line ? "" : "none";
+      }
+  
+      const audioSlot = card.querySelector("[data-slot=audio]");
+      if (audioSlot) {
+        audioSlot.innerHTML = ""; // safety if template changes
+  
+        if (song.primary_audio_mp3) {
+          const audio = document.createElement("audio");
+          audio.controls = false;
+          audio.preload = "metadata";
+          audio.className = "w-100";
+          audio.dataset.songAudio = "";
+          audio.dataset.songId = song.id || "";
+  
+          const src = document.createElement("source");
+          src.src = song.primary_audio_mp3;
+          src.type = "audio/mpeg";
+          audio.appendChild(src);
+          audio.appendChild(document.createTextNode("Your browser does not support the audio element."));
+  
+          createAudioControls(audio, audioSlot);
+        } else {
+          const span = document.createElement("span");
+          span.className = "text-muted small";
+          span.textContent = "No preview";
+          audioSlot.appendChild(span);
+        }
+      }
+  
+      const col = document.createElement("div");
+      col.className = "col-12";
+      col.appendChild(card);
+      resultsWrap.appendChild(col);
+    }
+  
+    // -----------------------------
+    // Tag-based search UI (expand panels + select/deselect)
+    // -----------------------------
+    const selectedTags = {
+      genre: new Set(),
+      mood: new Set(),
+      instrument: new Set(),
+      characteristic: new Set(),
+    };
+  
+    const CATEGORIES = ["genre", "mood", "instrument", "characteristic"];
+  
+    function getPanelForCategory(cat) {
+      return $("#tag-panel-" + cat);
+    }
+  
+    function closeAllTagPanels() {
+      $$(".tag-panel").forEach(p => (p.style.display = "none"));
+      $$(".tag-filter-category").forEach(b => b.setAttribute("aria-expanded", "false"));
+      tagFilterPanels.style.display = "none";
+    }
+  
+    function openTagPanel(cat) {
+      const panel = getPanelForCategory(cat);
+      if (!panel) return;
+  
+      // hide others
+      $$(".tag-panel").forEach(p => (p.style.display = "none"));
+      $$(".tag-filter-category").forEach(b => b.setAttribute("aria-expanded", "false"));
+  
+      tagFilterPanels.style.display = "";
+      panel.style.display = "";
+  
+      const btn = document.querySelector('.tag-filter-category[data-category="' + cat + '"]');
+      if (btn) btn.setAttribute("aria-expanded", "true");
+    }
+  
+    function updateCategoryDots() {
+      CATEGORIES.forEach(cat => {
+        const dot = document.querySelector(".tag-category-dot-" + cat);
+        const n = selectedTags[cat].size;
+        if (!dot) return;
+        dot.textContent = n;
+        dot.classList.toggle("d-none", n === 0);
+      });
+    }
+  
+    function decodeUnicode(str) {
       try {
-        const data = JSON.parse(evt.data);
-        appendProgressLine("ERROR: " + (data.message || "unknown"));
-        console.error("[SSE error payload]", data);
+        return JSON.parse('"' + str.replace(/"/g, '\\"') + '"');
       } catch {
-        appendProgressLine("ERROR: stream disconnected");
-        console.error("[SSE error] disconnected", evt);
+        return str;
       }
-      thinkingPanel.classList.add("idle");
-      setSending(false);
-      closeStream();
-    });
+    }
 
-    es.addEventListener("done", (evt) => {
-      const data = JSON.parse(evt.data);
-      appendProgressLine(data.message || "Done");
-      console.log("[SSE done]", data);
-      thinkingPanel.classList.add("idle");
-      setSending(false);
-      closeStream();
+    function renderActiveFiltersInPanel(cat) {
+      const container = document.querySelector('.active-tags-in-panel[data-category="' + cat + '"]');
+      if (!container) return;
+      container.innerHTML = "";
+  
+      selectedTags[cat].forEach(value => {
+        const decodedValue = decodeUnicode(value);
+        const pill = document.createElement("span");
+        pill.className = "active-filter-pill";
+        pill.innerHTML =
+          `${decodedValue} <span class="remove-tag" data-category="${cat}" data-value="${value.replace(/"/g, "&quot;")}" aria-label="Remove">×</span>`;
+        container.appendChild(pill);
+      });
+    }
+  
+    function renderActiveFiltersAll() {
+      activeFiltersPills.innerHTML = "";
+      CATEGORIES.forEach(cat => {
+        selectedTags[cat].forEach(value => {
+          const decodedValue = decodeUnicode(value);
+          const pill = document.createElement("span");
+          pill.className = "active-filter-pill";
+          pill.innerHTML =
+            `${decodedValue} <span class="remove-tag" data-category="${cat}" data-value="${value.replace(/"/g, "&quot;")}" aria-label="Remove">×</span>`;
+          activeFiltersPills.appendChild(pill);
+        });
+      });
+      updateCategoryDots();
+    }
+  
+    function syncTagOptionStates() {
+      $$(".tag-option").forEach(btn => {
+        const cat = btn.getAttribute("data-category");
+        const val = btn.getAttribute("data-value");
+        btn.classList.toggle("selected", selectedTags[cat]?.has(val));
+      });
+  
+      CATEGORIES.forEach(renderActiveFiltersInPanel);
+      renderActiveFiltersAll();
+    }
+  
+    // open/close panels
+    $$(".tag-filter-category").forEach(btn => {
+      btn.addEventListener("click", function () {
+        const cat = this.getAttribute("data-category");
+        const isOpen = this.getAttribute("aria-expanded") === "true";
+        if (isOpen) {
+          closeAllTagPanels();
+        } else {
+          openTagPanel(cat);
+        }
+      });
     });
-  });
-})();
-</script>
+  
+    // tag option toggle
+    $$(".tag-option").forEach(btn => {
+      btn.addEventListener("click", function () {
+        const cat = this.getAttribute("data-category");
+        const val = this.getAttribute("data-value");
+        if (!selectedTags[cat]) return;
+  
+        selectedTags[cat].has(val) ? selectedTags[cat].delete(val) : selectedTags[cat].add(val);
+        syncTagOptionStates();
+      });
+    });
+  
+    // single delegated handler for removing tags (both "all pills" + "in panel")
+    function handleRemoveTagClick(e) {
+      const t = e.target.closest(".remove-tag");
+      if (!t) return;
+  
+      const cat = t.getAttribute("data-category");
+      const val = t.getAttribute("data-value");
+      if (selectedTags[cat]) selectedTags[cat].delete(val);
+      syncTagOptionStates();
+    }
+  
+    activeFiltersPills.addEventListener("click", handleRemoveTagClick);
+    $$(".active-tags-in-panel").forEach(container => {
+      container.addEventListener("click", handleRemoveTagClick);
+    });
+  
+    tagFilterClose.addEventListener("click", closeAllTagPanels);
+  
+    tagFilterClear.addEventListener("click", function () {
+      CATEGORIES.forEach(cat => selectedTags[cat].clear());
+      syncTagOptionStates();
+    });
+  
+    // -----------------------------
+    // Tag-based search action
+    // -----------------------------
+    filterBtn.addEventListener("click", async function () {
+      const searchTerm = ($("#search-term").value || "").trim();
+      const genres = Array.from(selectedTags.genre);
+      const moods = Array.from(selectedTags.mood);
+      const instruments = Array.from(selectedTags.instrument);
+      const characteristics = Array.from(selectedTags.characteristic);
+  
+      if (!searchTerm && !genres.length && !moods.length && !instruments.length && !characteristics.length) {
+        alert("Select at least one tag or enter search terms.");
+        return;
+      }
+  
+      const params = new URLSearchParams();
+      if (searchTerm) params.set("q", searchTerm);
+      genres.forEach(v => params.append("genre", v));
+      moods.forEach(v => params.append("mood", v));
+      instruments.forEach(v => params.append("instrument", v));
+      characteristics.forEach(v => params.append("characteristic", v));
+  
+      const url = "{% url 'search_tags' %}" + "?" + params.toString();
+  
+      setButtonLoading(filterBtn, true, "filter-search-text", "filter-search-spinner", "Search with Tags", "Searching...");
+      clearResults();
+      filtersWrap.style.display = "none";
+      filtersBadges.innerHTML = "";
+  
+      try {
+        const result = await fetchJson(url);
+        if (!result.ok) {
+          alert(result.data.error || "Search failed.");
+          return;
+        }
+  
+        const items = result.data.items || [];
+        const activeFilters = result.data.active_filters || {};
+  
+        removeNoResultsMessage();
+        items.forEach(addSongCard);
+  
+        count = items.length;
+        trackCountEl.textContent = String(count);
+        renderFilters(activeFilters);
+  
+        if (items.length === 0) {
+          const msg = document.createElement("p");
+          msg.id = "noResultsMsg";
+          msg.className = "text-muted";
+          msg.textContent = "No tracks found. Try different tags or search terms.";
+          resultsWrap.appendChild(msg);
+        }
+      } catch (err) {
+        console.error("Tag search error", err);
+        alert("Search failed. Please try again.");
+      } finally {
+        setButtonLoading(filterBtn, false, "filter-search-text", "filter-search-spinner", "Search with Tags", "Searching...");
+      }
+    });
+  
+    // -----------------------------
+    // Clear logs
+    // -----------------------------
+    clearLogsBtn?.addEventListener("click", () => {
+      thinkingHistory.innerHTML = "";
+      showThinkingPanel(false);
+      console.log("[UI] cleared progress");
+    });
+  
+    // When switching to Tag-Based Search, hide/clear thinking (AI-only)
+    $$("#searchTabs .search-mode-btn").forEach(btn => {
+      btn.addEventListener("shown.bs.tab", e => {
+        if (e.target.id === "filter-tab") {
+          thinkingHistory.innerHTML = "";
+          showThinkingPanel(false);
+        }
+      });
+    });
+  
+    // Initialize count for server-rendered results (fallback)
+    document.addEventListener("DOMContentLoaded", () => {
+      renderFilters(window.__INITIAL_FILTERS__ || {});
+    });
+  
+    // -----------------------------
+    // AI search SSE
+    // -----------------------------
+    llmForm.addEventListener("submit", e => {
+      e.preventDefault();
+      const q = (qInput.value || "").trim();
+      if (!q) return;
+  
+      // Only proceed if we're on AI search tab
+      const activeTab = $("#searchTabs .search-mode-btn.active");
+      if (!activeTab || activeTab.id !== "llm-tab") return;
+  
+      thinkingHistory.innerHTML = "";
+      showThinkingPanel(true);
+      filtersWrap.style.display = "none";
+      filtersBadges.innerHTML = "";
+      clearResults();
+  
+      closeStream();
+      setSending(true);
+  
+      const url = "{% url 'search_stream' %}" + "?q=" + encodeURIComponent(q);
+      console.log("[SSE] connecting:", url);
+  
+      es = new EventSource(url);
+  
+      es.addEventListener("log", evt => {
+        const data = JSON.parse(evt.data);
+        appendProgressLine(data.message || "");
+        console.log("[SSE log]", data);
+      });
+  
+      es.addEventListener("results", evt => {
+        const data = JSON.parse(evt.data);
+        const items = data.items || [];
+        console.log("[SSE results]", { count: items.length, sample: items[0] });
+  
+        if (items.length) {
+          items.forEach(addSongCard);
+          count += items.length;
+          trackCountEl.textContent = String(count);
+        }
+      });
+  
+      es.addEventListener("error", evt => {
+        try {
+          const data = JSON.parse(evt.data);
+          appendProgressLine("ERROR: " + (data.message || "unknown"));
+          console.error("[SSE error payload]", data);
+        } catch {
+          appendProgressLine("ERROR: stream disconnected");
+          console.error("[SSE error] disconnected", evt);
+        }
+        showThinkingPanel(false);
+        setSending(false);
+        closeStream();
+      });
+  
+      es.addEventListener("done", evt => {
+        const data = JSON.parse(evt.data);
+        appendProgressLine(data.message || "Done");
+        console.log("[SSE done]", data);
+        showThinkingPanel(false);
+        setSending(false);
+        closeStream();
+      });
+    });
+  })();
+  </script>
 {% endblock content %}
 
 

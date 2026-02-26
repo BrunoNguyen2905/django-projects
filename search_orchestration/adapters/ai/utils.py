@@ -8,18 +8,36 @@ MAX_TERMS_PER_SELECTION = 3
 MAX_SELECTIONS = 4
 
 
+def _format_duration(seconds: Optional[int]) -> str:
+    """Format seconds as M:SS for display."""
+    if seconds is None or seconds < 0:
+        return ""
+    m, s = divmod(int(seconds), 60)
+    return f"{m}:{s:02d}"
+
+
 def song_to_context_item(song: Dict[str, Any]) -> Dict[str, Any]:
-    """Minimal serializable dict for UI: title, artists (name, image), primary_audio mp3."""
+    """Serializable dict for UI: title, artists, primary_audio, tags (genre/mood/instrument/characteristic), duration, bpm."""
     artists: List[Dict[str, str]] = [
         {"name": (a.get("name") or ""), "image": (a.get("image") or "")}
         for a in (song.get("artists") or [])
     ]
     primary = song.get("primary_audio") or {}
+    tags = song.get("tags") or {}
+    duration_s = primary.get("duration_s") or song.get("duration")
     return {
         "id": song.get("id"),
         "title": song.get("title") or f"Track (id: {song.get('id', '?')})",
         "artists": artists,
         "primary_audio_mp3": primary.get("mp3") or "",
+        "tags": {
+            "genre": list(tags.get("genre") or []),
+            "mood": list(tags.get("mood") or []),
+            "instrument": list(tags.get("instrument") or []),
+            "characteristic": list(tags.get("characteristic") or []),
+        },
+        "duration_display": _format_duration(duration_s),
+        "bpm": song.get("bpm"),
     }
 
 
@@ -125,3 +143,10 @@ def validate_and_normalize_selections(
         normalized.append(clean)
 
     return normalized
+
+
+def decode_unicode(str: str) -> str:
+    try:
+        return json.loads('"' + str.replace('"', '\\"') + '"')
+    except Exception:
+        return str
