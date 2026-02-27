@@ -496,6 +496,7 @@
   
     const filterBtn = $("#filter-search-btn");
     const thinkingPanel = $("#thinkingPanel");
+    const thinkingIndicator = $("#thinkingIndicator");
     const thinkingHistory = $("#thinkingHistory");
     const clearLogsBtn = $("#clearLogsBtn");
   
@@ -1013,6 +1014,7 @@
   
       thinkingHistory.innerHTML = "";
       showThinkingPanel(true);
+      thinkingIndicator.classList.remove("d-none");
       filtersWrap.style.display = "none";
       filtersBadges.innerHTML = "";
       clearResults();
@@ -1052,16 +1054,17 @@
           appendProgressLine("ERROR: stream disconnected");
           console.error("[SSE error] disconnected", evt);
         }
+        thinkingIndicator.classList.add("d-none");
         showThinkingPanel(false);
         setSending(false);
         closeStream();
       });
   
-      es.addEventListener("done", evt => {
+      es.addEventListener("END", evt => {
         const data = JSON.parse(evt.data);
         appendProgressLine(data.message || "Done");
         console.log("[SSE done]", data);
-        showThinkingPanel(false);
+        thinkingIndicator.classList.add("d-none");
         setSending(false);
         closeStream();
       });

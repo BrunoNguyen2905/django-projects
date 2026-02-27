@@ -92,7 +92,7 @@ def search_stream_view(request):
       - llm_token: token chunks from LLM generation (messages stream_mode)
       - state: optional node updates (updates stream_mode)
       - error: errors
-      - done: completion
+      - END: completion
     """
     query = (request.GET.get("q") or "").strip()
     if not query:
@@ -124,7 +124,7 @@ def search_stream_view(request):
         except Exception as e:
             yield _sse("error", {"message": str(e)})
 
-        yield _sse("done", {"message": "Search complete"})
+        yield _sse("END", {"message": "Search complete"})
 
     resp = StreamingHttpResponse(
         event_generator(), content_type="text/event-stream")

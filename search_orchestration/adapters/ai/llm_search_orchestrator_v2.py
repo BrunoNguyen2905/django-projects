@@ -77,7 +77,7 @@ def explain_for_node(
     if key == "announce_start":
         messages = prompt.format_prompt(user_text=user_text).to_messages()
     elif key == "generate_selections":
-        broaden = bool(state.get("broaden", False))
+        broaden = bool(state.get("round_idx", 0) > 0)
         messages = prompt.format_prompt(
             user_text=user_text, broaden=broaden).to_messages()
     elif key == "validate_and_merge":
@@ -126,11 +126,10 @@ def explain_for_node(
     elif key == "plan_round":
         messages = prompt.format_prompt(
             user_text=user_text,
-            broaden=extra.get("broaden", int(state.get("round_idx", 0)) > 0),
+            broaden=bool(state.get("round_idx", 0) > 0),
             filters_summary=format_filters_summary(
                 extra.get("merged_selection") or merged_selection),
-            is_first_round=extra.get("is_first_round", int(
-                state.get("round_idx", 0)) == 0),
+            is_first_round=bool(state.get("round_idx", 0) == 0),
         ).to_messages()
     else:
         messages = prompt.format_prompt(user_text=user_text).to_messages()
@@ -173,7 +172,7 @@ def _emit_explanation(
     """
     explanation = explain_for_node(node, state, extra=extra or {})
     msg = (explanation or fallback).strip()
-    # _emit(writer, type_="log", message=f"{node}: {msg}" if node else msg)
+
     _emit(writer, type_="log", message=msg)
 
 
@@ -181,9 +180,10 @@ def node_plan_round(state: SearchState) -> Dict[str, Any]:
     writer: StreamWriter = get_stream_writer()
 
     user_text: str = state.get("user_text") or ""
-    # If this is the first time we run, initialize state (what announce_start used to do)
-    initialized = bool(state.get("initialized", False))
-    if not initialized:
+    round_idx = int(state.get("round_idx", 0))
+    is_first_round = (round_idx == 0)
+    broaden = bool(round_idx > 0)
+    if is_first_round:
         # Emit a fast log immediately (no LLM) to reduce perceived latency
         _emit(writer, type_="log",
               message=f"Starting search for: {user_text or '(no query)'}")
@@ -194,25 +194,14 @@ def node_plan_round(state: SearchState) -> Dict[str, Any]:
             "min_results": state.get("min_results", DEFAULT_MIN_RESULTS),
             "max_rounds": state.get("max_rounds", DEFAULT_MAX_ROUNDS),
             "round_idx": 0,
-            "broaden": False,
             "prior_counts": [],
             "results": [],
             "seen_ids": [],
-            "debug_rounds": [],
-            "done": False,
-            "stop_reason": None,
-            "initialized": True,
         }
-
-    round_idx = int(state.get("round_idx", 0))
-    broaden = bool(round_idx > 0)
-    is_first_round = (round_idx == 0)
 
     # (Optional) quick non-LLM log so user sees movement while LLM runs
     _emit(writer, type_="log", message="Planning your search filters…")
 
-    # 1) Generate selections (blocking structured LLM call)
-    # Note: generate_search_selections already validates/normalizes internally
     try:
         valid = generate_search_selections(
             user_text,
@@ -227,7 +216,6 @@ def node_plan_round(state: SearchState) -> Dict[str, Any]:
     for sel in valid:
         merge_selection_into(merged, sel)
 
-    # 3) One combined explanation (uses your get_explain_prompt_plan_round)
     _emit_explanation(
         writer,
         state,
@@ -235,16 +223,10 @@ def node_plan_round(state: SearchState) -> Dict[str, Any]:
         node="node_plan_round",
         extra={
             "merged_selection": merged,
-            "broaden": broaden,
-            "is_first_round": is_first_round,
         },
     )
 
     return {
-        "initialized": True,
-        "broaden": broaden,
-        "selections_raw": valid,
-        "selections_valid": valid,
         "merged_selection": merged,
     }
 
@@ -297,22 +279,6 @@ def node_record_debug(state: SearchState) -> Dict[str, Any]:
     total_results = len(state.get("results") or [])
     min_results = int(state.get("min_results", DEFAULT_MIN_RESULTS))
     last_round_count = int(state.get("last_round_count", 0))
-    broaden = bool(state.get("broaden", False))
-    prior_counts = state.get("prior_counts")
-
-    debug_rounds: List[Dict[str, Any]] = list(state.get("debug_rounds") or [])
-    entry: Dict[str, Any] = {
-        "round": round_idx + 1,
-        "broaden": broaden,
-        "selections_generated": len(state.get("selections_valid") or []),
-        "round_results": last_round_count,
-        "total_results": total_results,
-        "target_achieved": total_results >= min_results,
-        "prior_counts": prior_counts,
-    }
-    debug_rounds.append(entry)
-
-    # Emit human-language explanation: enough tracks, or will loop, or no more rounds
     max_rounds = int(state.get("max_rounds", DEFAULT_MAX_ROUNDS))
     target_achieved = total_results >= min_results
     will_loop = not target_achieved and (round_idx + 1 < max_rounds)
@@ -341,7 +307,6 @@ def node_record_debug(state: SearchState) -> Dict[str, Any]:
     prior = list(state.get("prior_counts") or [])
     prior.append(last_round_count)
     return {
-        "debug_rounds": debug_rounds,
         "prior_counts": prior,
         "round_idx": round_idx + 1,
     }
@@ -350,7 +315,7 @@ def node_record_debug(state: SearchState) -> Dict[str, Any]:
 def _should_continue(state: SearchState) -> str:
     total_results = len(state.get("results") or [])
     min_results = int(state.get("min_results", DEFAULT_MIN_RESULTS))
-    round_idx = int(state.get("round_idx", 0))
+    round_idx = int(state.get("round_idx"))
     max_rounds = int(state.get("max_rounds", DEFAULT_MAX_ROUNDS))
 
     if total_results >= min_results:
@@ -368,8 +333,6 @@ def node_finish(state: SearchState) -> Dict[str, Any]:
         fallback=f"Search complete. We found {total_results} tracks for you.",
         node="node_finish"
     )
-    # explain_for_node("finish", state)
-    return {"done": True}
 
 
 def build_search_graph() -> Any:

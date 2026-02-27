@@ -11,7 +11,7 @@ from langchain_core.prompts import HumanMessagePromptTemplate
 def get_selection_instruction(
     *,
     broaden: bool,
-    prior_counts: Optional[List[int]],
+    prior_counts: List[int],
 ) -> str:
     """Build the instruction for the human message. System message holds the main rules; this adds context (and broaden hint when needed)."""
     instruction = "Follow the user's request using the allowed taxonomies below."
