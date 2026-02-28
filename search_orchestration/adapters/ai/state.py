@@ -24,7 +24,7 @@ class SearchState(TypedDict):
     round_idx: NotRequired[int]
 
     # History of how many tracks were returned each round (from Soundstripe, before dedupe). Used as signal for “broaden more / adjust.”
-    prior_counts: List[int]
+    prior_counts: NotRequired[List[int]]
 
     # The merged selection (after dedupe).
     merged_selection: NotRequired[Selection]

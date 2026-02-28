@@ -11,13 +11,11 @@ from search_orchestration.adapters.ai.prompts.selection import (
     get_selection_instruction,
 )
 from search_orchestration.adapters.ai.prompts.explain import (
-    get_explain_prompt,
-    get_explain_prompt_for_node,
+    EXPLAIN_PROMPTS,
 )
 
 __all__ = [
     "get_selection_prompt",
     "get_selection_instruction",
-    "get_explain_prompt",
-    "get_explain_prompt_for_node",
+    "EXPLAIN_PROMPTS",
 ]

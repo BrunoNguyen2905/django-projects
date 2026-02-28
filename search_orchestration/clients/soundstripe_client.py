@@ -130,7 +130,6 @@ def get_songs(
     response = _make_request("GET", "songs", params)
     #  if no data, return empty list
     if not response.get("data", []):
-        print('no data from get_songs', response)
         return response
 
     # If there's no included data, it might mean no results found

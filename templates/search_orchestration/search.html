@@ -429,6 +429,16 @@
         width: 105px;
         accent-color: #ff4da6; /* makes it pink */
       }
+      .typing-line::after {
+        content: "▍";
+        display: inline-block;
+        margin-left: 2px;
+        opacity: 0.7;
+        animation: blink 1s steps(2, start) infinite;
+      }
+      @keyframes blink {
+        to { visibility: hidden; }
+      }
     </style>
 
     {% if error %}
@@ -1018,52 +1028,110 @@
       filtersWrap.style.display = "none";
       filtersBadges.innerHTML = "";
       clearResults();
-  
+
       closeStream();
       setSending(true);
-  
+
       const url = "{% url 'search_stream' %}" + "?q=" + encodeURIComponent(q);
       console.log("[SSE] connecting:", url);
-  
+
       es = new EventSource(url);
-  
-      es.addEventListener("log", evt => {
-        const data = JSON.parse(evt.data);
-        appendProgressLine(data.message || "");
-        console.log("[SSE log]", data);
+
+      let activeLi = null;
+      let activeNode = null;
+
+      function createLine(node) {
+        const li = document.createElement("li");
+        li.dataset.node = node;
+        li.className = "typed-line";
+        thinkingHistory.appendChild(li);
+        thinkingHistory.scrollTop = thinkingHistory.scrollHeight;
+        showThinkingPanel(true);
+        return li;
+      }
+
+      function setCursor(li, node) {
+        if (activeLi && activeLi.isConnected) {
+          activeLi.classList.remove("typing-line");
+          activeLi.classList.add("typed-line");
+        }
+        activeLi = li;
+        activeNode = node;
+
+        if (activeLi) {
+          activeLi.classList.add("typing-line");
+        }
+      }
+
+      function stopCursor() {
+        if (activeLi && activeLi.isConnected) {
+          activeLi.classList.remove("typing-line");
+          activeLi.classList.add("typed-line");
+        }
+        activeLi = null;
+        activeNode = null;
+      }
+
+      // -----------------------------
+      // log_token (robust)
+      // -----------------------------
+      es.addEventListener("log_token", evt => {
+        const data = JSON.parse(evt.data || "{}");
+        const node = (data.node || "").trim();
+        if (!node) return;
+
+        // start => always new line for that node-run
+        if (data.start) {
+          const li = createLine(node);
+          setCursor(li, node);
+          return;
+        }
+
+        // end => stop cursor IF this end belongs to the active node
+        if (data.end) {
+          if (node === activeNode) stopCursor();
+          return;
+        }
+
+        // token => if node changes or no active line, start a new line
+        if (!activeLi || !activeLi.isConnected || node !== activeNode) {
+          const li = createLine(node);
+          setCursor(li, node);
+        }
+
+        activeLi.textContent += (data.token || "");
+        thinkingHistory.scrollTop = thinkingHistory.scrollHeight;
       });
-  
+
+      // -----------------------------
+      // Results
+      // -----------------------------
       es.addEventListener("results", evt => {
-        const data = JSON.parse(evt.data);
+        const data = JSON.parse(evt.data || "{}");
         const items = data.items || [];
-        console.log("[SSE results]", { count: items.length, sample: items[0] });
-  
         if (items.length) {
           items.forEach(addSongCard);
           count += items.length;
           trackCountEl.textContent = String(count);
         }
       });
-  
+
+      // -----------------------------
+      // Error
+      // -----------------------------
       es.addEventListener("error", evt => {
-        try {
-          const data = JSON.parse(evt.data);
-          appendProgressLine("ERROR: " + (data.message || "unknown"));
-          console.error("[SSE error payload]", data);
-        } catch {
-          appendProgressLine("ERROR: stream disconnected");
-          console.error("[SSE error] disconnected", evt);
-        }
+        // EventSource "error" fires for normal close too; avoid double noise after END
+        stopCursor();
         thinkingIndicator.classList.add("d-none");
-        showThinkingPanel(false);
         setSending(false);
         closeStream();
       });
-  
+
+      // -----------------------------
+      // End
+      // -----------------------------
       es.addEventListener("END", evt => {
-        const data = JSON.parse(evt.data);
-        appendProgressLine(data.message || "Done");
-        console.log("[SSE done]", data);
+        stopCursor();
         thinkingIndicator.classList.add("d-none");
         setSending(false);
         closeStream();

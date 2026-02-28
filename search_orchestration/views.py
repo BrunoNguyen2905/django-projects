@@ -102,10 +102,6 @@ def search_stream_view(request):
         )
 
     def event_generator():
-        # Initial status: we're starting to process the request
-        # yield _sse("log", {"message": "Starting your search…"})
-        results_sent = 0  # only send new items from updates (client appends)
-
         try:
             for mode, chunk in stream_orchestrated_search(
                 user_text=query,
@@ -115,20 +111,23 @@ def search_stream_view(request):
             ):
                 if mode == "custom":
                     t = chunk.get("type")
-                    if t == "log":
-                        msg = chunk.get("message", "")
-                        if msg:
-                            yield _sse("log", {"message": msg})
-                    elif t == "results":
+                    if t == "results":
                         yield _sse("results", {"items": chunk.get("items", [])})
+                    elif t == "log_token":
+                        yield _sse("log_token", {"node": chunk.get("node"), "token": chunk.get("token", "")})
         except Exception as e:
             yield _sse("error", {"message": str(e)})
-
-        yield _sse("END", {"message": "Search complete"})
-
+        yield _sse("END", {})
     resp = StreamingHttpResponse(
         event_generator(), content_type="text/event-stream")
-    # SSE + proxies: prevent buffering
-    resp["Cache-Control"] = "no-cache"
-    resp["X-Accel-Buffering"] = "no"  # for nginx
+
+    resp['Cache-Control'] = "no-cache"
+    resp['X-Accel-Buffering'] = "no"
     return resp
+
+
+def _sse(event: str, data: dict) -> str:
+    """
+    Format a Server-Sent Event message.
+    """
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"

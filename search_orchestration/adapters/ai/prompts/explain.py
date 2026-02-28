@@ -33,48 +33,6 @@ _EXPLAIN_SYSTEM = (
 )
 
 
-def get_explain_prompt_announce_start() -> ChatPromptTemplate:
-    human_msg = HumanMessagePromptTemplate.from_template(
-        "The user asked for: {user_text}\n\n"
-        "We are at the very beginning. In 1–3 sentences, give a brief overview: "
-        "we'll turn their request into search filters (genre, mood, instruments), search the catalog, "
-        "and if we need more we'll widen the search and try again. Do not mention 'round' or 'broaden'."
-    )
-    return ChatPromptTemplate.from_messages([
-        SystemMessagePromptTemplate.from_template(_EXPLAIN_SYSTEM),
-        human_msg,
-    ])
-
-
-def get_explain_prompt_generate_selections() -> ChatPromptTemplate:
-    human_msg = HumanMessagePromptTemplate.from_template(
-        "The user asked for: {user_text}\n"
-        "Current step: we are converting their description into search filters. broaden={broaden}\n\n"
-        "If broaden is False: Say we're turning their request into filters and we'll search. "
-        "You may hint at the vibe with at most 1–2 terms from the taxonomy. Use tentative wording. "
-        "If broaden is True: Say we're building broader filters to find more options. Do not list specific terms. "
-        "Do not use 'something' or 'things like'. Use music words: vibe, feel, style."
-    )
-    return ChatPromptTemplate.from_messages([
-        SystemMessagePromptTemplate.from_template(_EXPLAIN_SYSTEM),
-        human_msg,
-    ])
-
-
-def get_explain_prompt_validate_and_merge() -> ChatPromptTemplate:
-    human_msg = HumanMessagePromptTemplate.from_template(
-        "The user asked for: {user_text}\n"
-        "Filters we're using: {filters_summary}\n\n"
-        "In 1–3 short sentences, say we've converted their request into filters and we're searching the catalog now. "
-        "Use at most 2–3 terms from {filters_summary} in a natural phrase. Do not use 'something' or 'things like'. "
-        "Use ONLY terms from {filters_summary}."
-    )
-    return ChatPromptTemplate.from_messages([
-        SystemMessagePromptTemplate.from_template(_EXPLAIN_SYSTEM),
-        human_msg,
-    ])
-
-
 def get_explain_prompt_soundstripe_search() -> ChatPromptTemplate:
     human_msg = HumanMessagePromptTemplate.from_template(
         "The user asked for: {user_text}\n"
@@ -99,20 +57,6 @@ def get_explain_prompt_record_debug() -> ChatPromptTemplate:
         "If target_achieved is False and will_loop is True: Say we'll broaden the filters and fetch more tracks. "
         "If target_achieved is False and will_loop is False: Say this is what we found and we're presenting the results. "
         "Use at most 2–3 terms from {filters_summary} when mentioning filters. Do not use 'something' or 'things like'."
-    )
-    return ChatPromptTemplate.from_messages([
-        SystemMessagePromptTemplate.from_template(_EXPLAIN_SYSTEM),
-        human_msg,
-    ])
-
-
-def get_explain_prompt_explain_strategy() -> ChatPromptTemplate:
-    human_msg = HumanMessagePromptTemplate.from_template(
-        "The user asked for: {user_text}\n"
-        "We have {total_results} tracks so far; we're going to run the search again with broader filters.\n\n"
-        "In 1–3 short sentences say we're running the search again to find more options, "
-        "this time with broader filters, and we'll show them the new tracks. "
-        "Do not say 'round', 'broaden', or 'loop'."
     )
     return ChatPromptTemplate.from_messages([
         SystemMessagePromptTemplate.from_template(_EXPLAIN_SYSTEM),
@@ -151,30 +95,9 @@ def get_explain_prompt_plan_round() -> ChatPromptTemplate:
     ])
 
 
-def get_explain_prompt_for_node(node_name: str) -> ChatPromptTemplate:
-    """Return the explain prompt template for the given graph node name."""
-    prompts = {
-        "announce_start": get_explain_prompt_announce_start,
-        "generate_selections": get_explain_prompt_generate_selections,
-        "validate_and_merge": get_explain_prompt_validate_and_merge,
-        "soundstripe_search": get_explain_prompt_soundstripe_search,
-        "record_debug": get_explain_prompt_record_debug,
-        "explain_strategy": get_explain_prompt_explain_strategy,
-        "finish": get_explain_prompt_finish,
-        "plan_round": get_explain_prompt_plan_round,
-    }
-    fn = prompts.get(node_name)
-    if not fn:
-        raise ValueError(f"Unknown explain node: {node_name}. Known: {list(prompts)}")
-    return fn()
-
-
-def get_explain_prompt() -> ChatPromptTemplate:
-    """Generic explain prompt (legacy). Prefer get_explain_prompt_for_node for node-specific messages."""
-    system_msg = SystemMessagePromptTemplate.from_template(_EXPLAIN_SYSTEM)
-    human_msg = HumanMessagePromptTemplate.from_template(
-        "What the user asked for: {user_text}\n"
-        "Current step: round {round_num}, broaden = {broaden}. Prior counts: {prior_counts}\n\n"
-        "In 1–3 sentences, explain in plain language what we are doing or what we will do next."
-    )
-    return ChatPromptTemplate.from_messages([system_msg, human_msg])
+EXPLAIN_PROMPTS = {
+    "plan_round": get_explain_prompt_plan_round(),
+    "soundstripe_search": get_explain_prompt_soundstripe_search(),
+    "record_debug": get_explain_prompt_record_debug(),
+    "finish": get_explain_prompt_finish(),
+}
