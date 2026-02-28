@@ -1073,9 +1073,9 @@
       }
 
       // -----------------------------
-      // log_token (robust)
+      // llm_token (robust)
       // -----------------------------
-      es.addEventListener("log_token", evt => {
+      es.addEventListener("llm_token", evt => {
         const data = JSON.parse(evt.data || "{}");
         const node = (data.node || "").trim();
         if (!node) return;

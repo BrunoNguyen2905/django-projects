@@ -28,12 +28,12 @@ class SelectionItem(BaseModel):
 
 
 class SearchSelectionsResponse(BaseModel):
-    """Between 1 and 5 selection objects. Simple queries: 1; richer requests: 2–5."""
+    """Between 0 and 3 selection objects. Simple queries: 1; richer requests: 2-3."""
 
     selections: List[SelectionItem] = Field(
-        description="List of 1 to 5 selection objects. Each object may have genre, instrument, characteristic, and/or mood as lists of allowed terms. Max 5 terms total per selection.",
-        min_length=1,
-        max_length=5,
+        description="List of 0 to 3 selection objects. Each object may have genre, instrument, characteristic, and/or mood as lists of allowed terms. Max 3 terms total per selection.",
+        min_length=0,
+        max_length=3,
     )
 
 

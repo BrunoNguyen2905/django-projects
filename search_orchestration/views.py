@@ -102,6 +102,20 @@ def search_stream_view(request):
         )
 
     def event_generator():
+        active_llm_node = None
+        started_for_node = False
+
+        def start_node(node: str):
+            nonlocal active_llm_node, started_for_node
+            active_llm_node = node
+            started_for_node = True
+            return _sse("llm_token", {"node": node, "start": True})
+
+        def end_node(node: str):
+            nonlocal started_for_node
+            started_for_node = False
+            return _sse("llm_token", {"node": node, "end": True})
+
         try:
             for mode, chunk in stream_orchestrated_search(
                 user_text=query,
@@ -113,10 +127,34 @@ def search_stream_view(request):
                     t = chunk.get("type")
                     if t == "results":
                         yield _sse("results", {"items": chunk.get("items", [])})
-                    elif t == "log_token":
-                        yield _sse("log_token", {"node": chunk.get("node"), "token": chunk.get("token", "")})
+                elif mode == "messages":
+                    msg, meta = chunk
+                    token = getattr(msg, "content", "") or ""
+                    if not token:
+                        continue
+
+                    node = (meta.get("langgraph_node") or "").strip() or "llm"
+                    # Don't stream internal selection JSON node(s)
+                    if node == "plan_round":
+                        continue
+                    # If node switched, close previous + open new
+                    if active_llm_node is None:
+                        yield start_node(node)
+                    elif node != active_llm_node:
+                        yield end_node(active_llm_node)
+                        yield start_node(node)
+
+                    # Normal token emit
+                    yield _sse("llm_token", {"node": node, "token": token})
         except Exception as e:
+            # close cursor cleanly on error
+            if active_llm_node and started_for_node:
+                yield end_node(active_llm_node)
             yield _sse("error", {"message": str(e)})
+
+        # close cursor cleanly at the end
+        if active_llm_node and started_for_node:
+            yield end_node(active_llm_node)
         yield _sse("END", {})
     resp = StreamingHttpResponse(
         event_generator(), content_type="text/event-stream")

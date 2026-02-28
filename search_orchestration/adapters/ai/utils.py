@@ -4,8 +4,7 @@ import json
 from search_orchestration.adapters.ai.state import Selection, Taxonomy
 from search_orchestration.adapters.ai.taxonomy import MUSIC_TAXONOMY
 
-MAX_TERMS_PER_SELECTION = 3
-MAX_SELECTIONS = 4
+MAX_TERMS_PER_SELECTION = 5
 
 
 def _format_duration(seconds: Optional[int]) -> str:
@@ -107,10 +106,6 @@ def validate_and_normalize_selections(
         raise ValueError("LLM output must be a JSON list.")
     if len(raw) == 0:
         raise ValueError("LLM output must contain at least 1 selection.")
-    if len(raw) > MAX_SELECTIONS:
-        raise ValueError(
-            f"LLM output contains too many selections ({len(raw)}), expected max {MAX_SELECTIONS}."
-        )
 
     normalized: List[Selection] = []
     priority_keys = ["genre", "mood", "characteristic", "instrument"]
@@ -130,14 +125,26 @@ def validate_and_normalize_selections(
 
         total_terms = sum(len(v) for v in clean.values())
         if total_terms > max_terms_total:
+            # ✅ Round-robin: take 1 from each priority key per pass until max_terms_total
             trimmed: Selection = {}
             remaining = max_terms_total
-            for k in priority_keys:
-                if k in clean and remaining > 0:
-                    take = clean[k][:remaining]
-                    if take:
-                        trimmed[k] = take
-                        remaining -= len(take)
+
+            # work on copies we can consume from the front
+            queues: Dict[str, List[str]] = {
+                k: list(clean.get(k, [])) for k in priority_keys if k in clean
+            }
+
+            while remaining > 0 and any(queues.get(k) for k in priority_keys):
+                for k in priority_keys:
+                    if remaining <= 0:
+                        break
+                    q = queues.get(k)
+                    if not q:
+                        continue
+                    term = q.pop(0)
+                    trimmed.setdefault(k, []).append(term)
+                    remaining -= 1
+
             clean = trimmed
 
         normalized.append(clean)
