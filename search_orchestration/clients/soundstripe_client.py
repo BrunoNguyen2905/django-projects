@@ -13,6 +13,8 @@ env.read_env()
 # api_key = env.str("SOUNDSTRIPE_API_KEY")
 api_key = env.str("SOUNDSTRIPE_API_KEY")
 
+api_key_prod = env.str("SOUNDSTRIPE_API_KEY_PRODUCTION")
+
 api_base = "https://api.soundstripe.com/v1"
 
 
@@ -26,6 +28,16 @@ def _get_headers() -> Dict[str, str]:
     }
 
 
+def _get_headers_prod() -> Dict[str, str]:
+    """Get common headers for API requests."""
+    return {
+        "accept": "application/json",
+        "Content-Type": "application/vnd.api+json",
+        "Accept": "application/vnd.api+json",
+        "Authorization": f"Token {api_key_prod}"
+    }
+
+
 def _cache_hit(*args, **kwargs):
     print('SS client cachehit')
 
@@ -35,6 +47,23 @@ def _make_request(method: str, endpoint: str, params: Optional[Dict] = None) -> 
     """Make an HTTP request to the Soundstripe API."""
     url = f"{api_base}/{endpoint}"
     headers = _get_headers()
+
+    if method.lower() == "get":
+        response = httpx.get(url, headers=headers, params=params or {})
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise httpx.HTTPError(
+                f"HTTP {response.status_code}: {response.text}")
+    else:
+        raise ValueError(f"Unsupported HTTP method: {method}")
+
+
+@cache_memoize(3600, hit_callable=_cache_hit)
+def _make_request_prod(method: str, endpoint: str, params: Optional[Dict] = None) -> Dict[str, Any]:
+    """Make an HTTP request to the Soundstripe API."""
+    url = f"{api_base}/{endpoint}"
+    headers = _get_headers_prod()
 
     if method.lower() == "get":
         response = httpx.get(url, headers=headers, params=params or {})
@@ -365,7 +394,7 @@ def get_sound_effects(
 
     params["page[size]"] = 100  # TODO static page size
 
-    response = _make_request("GET", "sound_effects", params)
+    response = _make_request_prod("GET", "sound_effects", params)
 
     # Flatten attributes to top level for each sound effect
     if "data" in response:

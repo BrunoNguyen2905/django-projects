@@ -9,6 +9,7 @@ from search_orchestration.adapters.ai import (
 )
 from search_orchestration.adapters.ai.utils import decode_unicode
 from search_orchestration.adapters.soundstripe_adapter import soundstripe_search
+from search_orchestration.clients.soundstripe_client import get_categories, get_sound_effects
 
 from search_orchestration.adapters.ai.taxonomy import MUSIC_TAXONOMY
 
@@ -71,13 +72,6 @@ def search_view(request):
         "characteristics": MUSIC_TAXONOMY["characteristic"],
         "moods": MUSIC_TAXONOMY["mood"],
     })
-
-
-def _sse(event: str, data: dict) -> str:
-    """
-    Format a Server-Sent Event message.
-    """
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 @login_required
