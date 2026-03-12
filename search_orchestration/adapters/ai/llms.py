@@ -29,6 +29,7 @@ def get_openai_model(model="gpt-5-nano", temperature=0.1, max_retries=2, streami
 
 # Lazy-initialized structured LLMs (with_structured_output; typically non-streaming)
 _structured_selection_llm = None
+_structured_sfx_selection_llm = None
 _structured_explain_llm = None
 
 
@@ -40,6 +41,14 @@ def get_structured_selection_llm():
         _structured_selection_llm = base.with_structured_output(
             SearchSelectionsResponse)
     return _structured_selection_llm
+
+
+def get_structured_sfx_selection_llm():
+    """LLM for SFX taxonomy selection generation returning dict response."""
+    global _structured_sfx_selection_llm
+    if _structured_sfx_selection_llm is None:
+        _structured_sfx_selection_llm = get_openai_model()
+    return _structured_sfx_selection_llm
 
 
 def get_structured_explain_llm():

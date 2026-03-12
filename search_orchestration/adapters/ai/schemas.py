@@ -1,7 +1,7 @@
 """Pydantic schemas for LLM structured output (with_structured_output)."""
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -35,6 +35,9 @@ class SearchSelectionsResponse(BaseModel):
         min_length=0,
         max_length=3,
     )
+
+
+SfxSearchSelectionsResponse = Dict[str, List[str]]
 
 
 class ExplainResponse(BaseModel):

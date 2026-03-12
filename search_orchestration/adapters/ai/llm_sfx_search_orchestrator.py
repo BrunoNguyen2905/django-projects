@@ -10,23 +10,23 @@ from langgraph.config import get_stream_writer
 
 from search_orchestration.adapters.ai.llms import (
     get_explain_llm_streaming,
-    get_structured_selection_llm,
+    get_structured_sfx_selection_llm,
 )
 from search_orchestration.adapters.ai.prompts import (
     get_selection_prompt,
     get_selection_instruction,
 )
-from search_orchestration.adapters.ai.prompts.explain import EXPLAIN_PROMPTS
-from search_orchestration.adapters.ai.utils import merge_selection_into, song_to_context_item, format_filters_summary, validate_and_normalize_selections
+from search_orchestration.adapters.ai.prompts.explain import EXPLAIN_PROMPTS_SFX
+from search_orchestration.adapters.ai.utils import merge_selection_into, sfx_to_context_item, format_filters_summary, validate_and_normalize_sfx_selections
 from search_orchestration.adapters.ai.state import Selection, SearchState
-from search_orchestration.adapters.ai.taxonomy import MUSIC_TAXONOMY
-from search_orchestration.adapters.soundstripe_adapter import soundstripe_search
+from search_orchestration.adapters.ai.taxonomy import SFX_TAXONOMY
+from search_orchestration.adapters.soundstripe_adapter import soundstripe_sfx_search
 
 # Defaults for search loop
 DEFAULT_MIN_RESULTS = 20
 DEFAULT_MAX_ROUNDS = 3
-TAXONOMY_JSON = json.dumps(MUSIC_TAXONOMY, ensure_ascii=False, indent=2)
-SELECTION_PROMPT = get_selection_prompt(MUSIC_TAXONOMY)
+TAXONOMY_JSON = json.dumps(SFX_TAXONOMY, ensure_ascii=False, indent=2)
+SELECTION_PROMPT = get_selection_prompt(SFX_TAXONOMY)
 
 
 def generate_search_selections(
@@ -40,28 +40,36 @@ def generate_search_selections(
     Returns a list of selection dicts (validated and normalized).
     """
     instruction = get_selection_instruction(
-        broaden=broaden, prior_counts=prior_counts, taxonomy=MUSIC_TAXONOMY)
+        broaden=broaden, prior_counts=prior_counts, taxonomy=SFX_TAXONOMY)
 
     messages = SELECTION_PROMPT.format_prompt(
         instruction=instruction,
         user_text=user_text,
         taxonomy_json=TAXONOMY_JSON,
     ).to_messages()
+    # print("messages from sfx generate_search_selections", messages)
 
-    structured_llm = get_structured_selection_llm()
+    structured_llm = get_structured_sfx_selection_llm()
     res = structured_llm.invoke(messages)
-
-    raw: List[Dict[str, Any]] = [
-        {k: v for k, v in item.model_dump().items() if v is not None}
-        for item in res.selections
-    ]
-    return validate_and_normalize_selections(raw)
+    # Extract and parse JSON content from AIMessage
+    content = res.content if hasattr(res, 'content') else str(res)
+    try:
+        selection_dict = json.loads(content)
+        raw: List[Dict[str, Any]] = [selection_dict]
+    except json.JSONDecodeError as e:
+        print(f"JSON parsing error: {e}")
+        raw: List[Dict[str, Any]] = [{}]
+        # TODO can be optimzed for the raw and validate_and_normalize_sfx_selections to be in the same function
+    print("raw from sfx generate_search_selections", raw)
+    print("validate_and_normalize_sfx_selections from sfx generate_search_selections",
+          validate_and_normalize_sfx_selections(raw))
+    return validate_and_normalize_sfx_selections(raw)
 
 
 def _build_explain_prompt_messages(state: SearchState) -> List[BaseMessage]:
     key = state.get("explain_key") or "finish"
     ctx = state.get("explain_ctx") or {}
-    prompt = EXPLAIN_PROMPTS[key]
+    prompt = EXPLAIN_PROMPTS_SFX[key]
 
     user_text: str = state.get("user_text") or ""
     filters_summary = format_filters_summary(
@@ -146,6 +154,7 @@ def node_plan_round(state: SearchState) -> Dict[str, Any]:
             broaden=broaden,
             prior_counts=state.get("prior_counts") or [],
         )
+        print(f"Generated {len(valid)} selections: {valid}")
     except Exception as e:
         print(f"Selection validation error: {e}")
         valid = []
@@ -167,35 +176,51 @@ def node_plan_round(state: SearchState) -> Dict[str, Any]:
 def node_soundstripe_search(state: SearchState) -> Dict[str, Any]:
     writer = get_stream_writer()
     merged: Selection = state.get("merged_selection") or {}
-    songs: List[Dict[str, Any]] = soundstripe_search(merged)
+
+    try:
+        sfx_results: List[Dict[str, Any]] = soundstripe_sfx_search(merged)
+    except Exception as e:
+        print(f"Error in soundstripe_sfx_search: {e}")
+        # Return empty results to continue the flow
+        return {
+            "results": state.get("results", []),
+            "seen_ids": state.get("seen_ids", []),
+            "last_round_count": 0,
+            "explain_key": "soundstripe_search",
+            "explain_ctx": {
+                "songs_count": 0,
+                "new_songs_count": 0,
+                "error": str(e),
+            },
+        }
 
     results: List[Dict[str, Any]] = list(state.get("results") or [])
     seen_ids_set: Set[str] = set(state.get("seen_ids") or [])
 
-    new_songs: List[Dict[str, Any]] = []
-    for song in songs:
-        sid = str(song.get("id") or "")
+    new_sfx: List[Dict[str, Any]] = []
+    for sfx in sfx_results:
+        sid = str(sfx.get("id") or "")
         if not sid or sid in seen_ids_set:
             continue
         seen_ids_set.add(sid)
-        results.append(song)
-        new_songs.append(song)
+        results.append(sfx)
+        new_sfx.append(sfx)
 
-    if new_songs:
+    if new_sfx:
         _emit(
             writer,
             type_="results",
-            items=[song_to_context_item(s) for s in new_songs],
+            items=[sfx_to_context_item(s) for s in new_sfx],
         )
 
     return {
         "results": results,
         "seen_ids": list(seen_ids_set),  # JSON-safe
-        "last_round_count": len(songs),
+        "last_round_count": len(sfx_results),
         "explain_key": "soundstripe_search",
         "explain_ctx": {
-            "songs_count": len(songs),
-            "new_songs_count": len(new_songs),
+            "songs_count": len(sfx_results),
+            "new_songs_count": len(new_sfx),
         },
     }
 
@@ -260,9 +285,14 @@ def build_search_graph() -> Any:
 
     # Wrap explain runnable to write into state["messages"] so add_messages can collect it
     def explain_node(state: SearchState) -> Dict[str, Any]:
-        # streams chunks via stream_mode="messages"
-        msg = explain.invoke(state)
-        return {"messages": [msg]}
+        try:
+            # streams chunks via stream_mode="messages"
+            msg = explain.invoke(state)
+            return {"messages": [msg]}
+        except Exception as e:
+            print(f"Error in explain_node: {e}")
+            # Return empty messages to continue flow
+            return {"messages": []}
 
     # Register nodes
     g.add_node("plan_round", node_plan_round)

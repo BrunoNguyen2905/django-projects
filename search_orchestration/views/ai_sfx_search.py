@@ -3,85 +3,53 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 
-from search_orchestration.adapters.ai import (
-    stream_orchestrated_search,
-    song_to_context_item,
-)
-from search_orchestration.adapters.ai.utils import decode_unicode
-from search_orchestration.adapters.soundstripe_adapter import soundstripe_search
-
-from search_orchestration.adapters.ai.taxonomy import MUSIC_TAXONOMY
+from search_orchestration.adapters.ai.llm_sfx_search_orchestrator import stream_orchestrated_search
+from search_orchestration.clients.soundstripe_client import get_categories, get_sound_effects
 
 
 @login_required
-def search_tags_view(request):
+def sfx_search_view(request):
     """
-    Tag-based search: GET params q (optional), genre, mood, instrument, characteristic (multiple).
-    Returns JSON: { "items": [...], "active_filters": { genre: [], mood: [], ... } }.
+    GET-only page that shows the SFX search form + JS that connects to SSE stream.
     """
-    q = (request.GET.get("q") or "").strip()
-    genre = request.GET.getlist("genre")
-    mood = request.GET.getlist("mood")
-    instrument = request.GET.getlist("instrument")
-    characteristic = request.GET.getlist("characteristic")
-
-    selection = {}
-    if genre:
-        selection["genre"] = [decode_unicode(g) for g in genre]
-    if mood:
-        selection["mood"] = [decode_unicode(m) for m in mood]
-    if instrument:
-        selection["instrument"] = [decode_unicode(i) for i in instrument]
-    if characteristic:
-        selection["characteristic"] = [
-            decode_unicode(c) for c in characteristic]
-
-    if not selection and not q:
-        return JsonResponse(
-            {"error": "Select at least one tag or enter search terms."},
-            status=400,
-        )
-
-    try:
-        songs = soundstripe_search(selection, q=q or None)
-        print('songs from soundstripe_search', songs)
-    except Exception as e:
-        return JsonResponse(
-            {"error": str(e)},
-            status=500,
-        )
-
-    items = [song_to_context_item(s) for s in songs]
-    active_filters = selection
-    return JsonResponse({"items": items, "active_filters": active_filters})
-
-
-@login_required
-def search_view(request):
-    """
-    GET-only page that shows the search form + JS that connects to SSE stream.
-    """
-    return render(request, "search_orchestration/search.html", {
+    return render(request, "search_orchestration/sfx_search.html", {
         "query": "",
-        "songs": [],
+        "sound_effects": [],
         "active_filters": {},
         "error": None,
-        "genres": MUSIC_TAXONOMY["genre"],
-        "instruments": MUSIC_TAXONOMY["instrument"],
-        "characteristics": MUSIC_TAXONOMY["characteristic"],
-        "moods": MUSIC_TAXONOMY["mood"],
     })
 
 
 @login_required
-def search_stream_view(request):
+def sfx_search_api_view(request):
+    """
+    API endpoint for SFX search. GET params: q (optional), categories (comma-separated, optional).
+    Returns JSON: { "sound_effects": [...], "error": null }
+    """
+    q = (request.GET.get("q") or "").strip()
+    categories_param = request.GET.get("categories", "").strip()
+
+    # Parse categories
+    categories = None
+    if categories_param:
+        categories = categories_param
+
+    try:
+        sound_effects = get_sound_effects(q=q, categories=categories)
+        return JsonResponse({"sound_effects": sound_effects.get("data", []), "error": None})
+    except Exception as e:
+        return JsonResponse({"sound_effects": [], "error": str(e)}, status=500)
+
+
+@login_required
+def sfx_search_stream_view(request):
     """
     SSE endpoint:
-      /search/stream?q=your+query
+      /sfx/search/stream?q=your+query
 
     Streams:
       - log: progress messages (custom events from graph)
-      - results: incremental song batches (custom events from graph)
+      - results: incremental sfx batches (custom events from graph)
       - llm_token: token chunks from LLM generation (messages stream_mode)
       - state: optional node updates (updates stream_mode)
       - error: errors

@@ -16,7 +16,7 @@ from .state import SearchState, Selection
 from .llm_search_orchestrator_v2 import (
     stream_orchestrated_search,
 )
-from .utils import song_to_context_item, message_chunk_content
+from .utils import song_to_context_item, sfx_to_context_item, message_chunk_content
 
 __all__ = [
     "prompts",
@@ -24,5 +24,6 @@ __all__ = [
     "Selection",
     "stream_orchestrated_search",
     "song_to_context_item",
+    "sfx_to_context_item",
     "message_chunk_content",
 ]

@@ -40,6 +40,30 @@ def song_to_context_item(song: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def sfx_to_context_item(sfx: Dict[str, Any]) -> Dict[str, Any]:
+    """Serializable dict for UI: title, artists, primary_audio, tags (category/subcategory), duration."""
+    # SFX don't have artists in the same way, but we'll use a default
+    artists = [{"name": "Soundstripe", "image": ""}]
+
+    primary = sfx.get("primary_audio") or {}
+    # SFX tags are stored differently - they use category/subcategory structure
+    # For now, we'll extract them from the SFX taxonomy categories
+    tags = sfx.get("tags") or {}
+    duration_s = primary.get("duration_s") or sfx.get("duration")
+
+    return {
+        "id": sfx.get("id"),
+        "title": sfx.get("name") or sfx.get("title") or f"Sound Effect (id: {sfx.get('id', '?')})",
+        "artists": artists,
+        "primary_audio_mp3": primary.get("mp3") or sfx.get("primary_audio_mp3") or "",
+        "tags": {
+            "category": list(tags.get("category") or []),
+            "subcategory": list(tags.get("subcategory") or []),
+        },
+        "duration_display": _format_duration(duration_s),
+    }
+
+
 def format_filters_summary(merged_selection: Optional[Selection]) -> str:
     """Format merged selection for use in explain prompts (e.g. 'genre: Cinematic; mood: Uplifting'). Safe for None/empty."""
     if not merged_selection:
@@ -120,6 +144,69 @@ def validate_and_normalize_selections(
                 continue
             terms = [t for t in v if isinstance(
                 t, str) and t in allowed_terms.get(k, set())]
+            if terms:
+                clean[k] = _dedupe_keep_order(terms)
+
+        total_terms = sum(len(v) for v in clean.values())
+        if total_terms > max_terms_total:
+            # ✅ Round-robin: take 1 from each priority key per pass until max_terms_total
+            trimmed: Selection = {}
+            remaining = max_terms_total
+
+            # work on copies we can consume from the front
+            queues: Dict[str, List[str]] = {
+                k: list(clean.get(k, [])) for k in priority_keys if k in clean
+            }
+
+            while remaining > 0 and any(queues.get(k) for k in priority_keys):
+                for k in priority_keys:
+                    if remaining <= 0:
+                        break
+                    q = queues.get(k)
+                    if not q:
+                        continue
+                    term = q.pop(0)
+                    trimmed.setdefault(k, []).append(term)
+                    remaining -= 1
+
+            clean = trimmed
+
+        normalized.append(clean)
+
+    return normalized
+
+
+def validate_and_normalize_sfx_selections(
+    raw: Any,
+    *,
+    max_terms_total: int = MAX_TERMS_PER_SELECTION,
+) -> List[Selection]:
+    """Validate and normalize SFX selections against SFX_TAXONOMY. Allows more terms to reach 5 IDs total."""
+    from search_orchestration.adapters.ai.taxonomy import SFX_TAXONOMY
+
+    allowed_keys: Set[str] = set(SFX_TAXONOMY.keys())
+    allowed_terms: Dict[str, Set[str]] = _allowed_terms_set(SFX_TAXONOMY)
+
+    if not isinstance(raw, list):
+        raise ValueError("LLM output must be a JSON list.")
+    if len(raw) == 0:
+        raise ValueError("LLM output must contain at least 1 selection.")
+
+    normalized: List[Selection] = []
+    priority_keys = list(SFX_TAXONOMY.keys())  # Use all SFX categories as priority
+
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("Each selection must be an object.")
+
+        clean: Selection = {}
+        for k, v in item.items():
+            if k not in allowed_keys or not isinstance(v, list):
+                continue
+
+            terms = [t for t in v if isinstance(
+                t, str) and t in allowed_terms.get(k, set())]
+
             if terms:
                 clean[k] = _dedupe_keep_order(terms)
 
