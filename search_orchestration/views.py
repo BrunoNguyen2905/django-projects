@@ -104,13 +104,15 @@ def search_stream_view(request):
         current_line_tokens = []
         total_count = 0
 
-        # Stream start: show loading and thinking panel (client clears results/thinking before opening stream)
+        # Stream start: show loading and thinking panel, clear results and thinking for new search
         yield SSE.patch_signals({
             "sending": True,
             "showThinking": True,
             "trackCount": 0,
             "error": None,
         })
+        yield SSE.patch_elements("", selector="#resultsWrap", mode="inner")
+        yield SSE.patch_elements("", selector="#thinkingHistory", mode="inner")
 
         def finalize_current_thinking():
             """Replace #thinking-current with finalized <li> (no id) so next node can start fresh."""
@@ -225,3 +227,12 @@ def search_stream_view(request):
             )
 
     return DatastarResponse(event_generator())
+
+
+@login_required
+def search_clear_thinking_view(request):
+    """DataStar endpoint: clear thinking panel and hide it (Clear button / tab switch)."""
+    return DatastarResponse(iter([
+        SSE.patch_signals({"showThinking": False}),
+        SSE.patch_elements("", selector="#thinkingHistory", mode="inner"),
+    ]))

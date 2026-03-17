@@ -3,7 +3,7 @@
 {% block title %}Music Search{% endblock title %}
 
 {% block content %}
-<div class="container-fluid search-page-wrap">
+<div class="container-fluid search-page-wrap" data-signals="{ sending: false, showThinking: false, trackCount: 0, error: null }">
   <!-- Search Form - Full Width at Top -->
   <div class="row mb-4">
     <div class="col-12">
@@ -17,24 +17,28 @@
             <button class="search-mode-btn active" id="llm-tab" data-bs-toggle="tab" data-bs-target="#llm-search" type="button" role="tab" aria-controls="llm-search" aria-selected="true">
               AI-Powered Search
             </button>
-            <button class="search-mode-btn" id="filter-tab" data-bs-toggle="tab" data-bs-target="#filter-search" type="button" role="tab" aria-controls="filter-search" aria-selected="false">
+            <button class="search-mode-btn" id="filter-tab" data-bs-toggle="tab" data-bs-target="#filter-search" type="button" role="tab" aria-controls="filter-search" aria-selected="false"
+              data-on:shown.bs.tab="@get('{% url 'search_clear_thinking' %}')">
               Tag-Based Search
             </button>
           </div>
 
           <!-- Tab Content -->
           <div class="tab-content" id="searchTabsContent">
-            <!-- AI-Powered Search Tab -->
+            <!-- AI-Powered Search Tab (DataStar: form submit triggers @get with contentType form → SSE stream) -->
             <div class="tab-pane fade show active" id="llm-search" role="tabpanel" aria-labelledby="llm-tab">
-              <form id="llm-search-form" method="get">
+              <form id="llm-search-form" method="get"
+                data-on:submit="@get('{% url 'search_stream' %}', { contentType: 'form', openWhenHidden: true })">
                 <div class="mb-3">
                   <label for="q" class="form-label">Describe Your Music</label>
                   <textarea class="form-control" id="q" name="q" rows="3" placeholder="E.g., 'upbeat electronic music for a party' or 'calm acoustic guitar for studying'">{{ query|default:'' }}</textarea>
                   <div class="form-text">Use natural language to describe the music you want</div>
                 </div>
-                <button type="submit" class="btn btn-primary w-100" id="llm-search-btn">
-                  <span id="llm-search-text">AI Search</span>
-                  <div id="llm-search-spinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status">
+                <button type="submit" class="btn btn-primary w-100" id="llm-search-btn"
+                  data-attr:disabled="$sending">
+                  <span id="llm-search-text" data-text="$sending ? 'Searching...' : 'AI Search'">AI Search</span>
+                  <div id="llm-search-spinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status"
+                    data-class:d-none="!$sending">
                     <span class="visually-hidden">Loading...</span>
                   </div>
                 </button>
@@ -154,11 +158,13 @@
   <div class="row">
     <div class="col-12">
 
-    <p class="text-muted mb-4" id="searchingMsg" style="display: none;">Searching...</p>
+    <p class="text-muted mb-4" id="searchingMsg" style="display: none;" data-show="$sending">Searching...</p>
 
-    <!-- Progress: real-time thinking list -->
+    <!-- Progress: real-time thinking list (DataStar: visibility from $showThinking, dots hide when $sending false) -->
     <div class="mb-4">
-      <div id="thinkingPanel" class="search-thinking-panel rounded-3 px-3 py-2" style="display: none;">
+      <div id="thinkingPanel" class="search-thinking-panel rounded-3 px-3 py-2" style="display: none;"
+        data-show="$showThinking"
+        data-class:search-complete="!$sending && $showThinking">
         <div class="d-flex align-items-start gap-2">
           <div id="thinkingIndicator" class="search-thinking-dots flex-shrink-0 mt-2">
             <span></span><span></span><span></span>
@@ -166,10 +172,13 @@
           <div class="flex-grow-1 min-w-0">
             <ul id="thinkingHistory" class="search-thinking-list list-unstyled mb-0 small" aria-label="Search progress"></ul>
           </div>
-          <button type="button" class="btn btn-sm btn-link text-muted p-0 align-self-start" id="clearLogsBtn" title="Clear">Clear</button>
+          <button type="button" class="btn btn-sm btn-link text-muted p-0 align-self-start" id="clearLogsBtn" title="Clear"
+            data-on:click="@get('{% url 'search_clear_thinking' %}')">Clear</button>
         </div>
       </div>
     </div>
+
+    <div class="alert alert-danger mb-3" role="alert" style="display: none;" data-show="$error" data-text="$error"></div>
 
     <style>
       /* Prevent horizontal scroll: contain overflow from row gutters and wide flex content */
@@ -463,7 +472,7 @@
     </div>
 
     <!-- Results -->
-    <h2 class="h5 mb-3">Tracks (<span id="trackCount">0</span>)</h2>
+    <h2 class="h5 mb-3">Tracks (<span id="trackCount" data-text="$trackCount">0</span>)</h2>
 
     <div id="resultsWrap" class="row g-3">
       <p id="noResultsMsg" class="text-muted">No tracks yet. Run a search.</p>
@@ -509,18 +518,9 @@
     const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   
     // -----------------------------
-    // Elements
+    // Elements (AI search UI is driven by DataStar; only tag search + results need refs)
     // -----------------------------
-    const llmForm = $("#llm-search-form");
-    const qInput = $("#q");
-    const llmBtn = $("#llm-search-btn");
-  
     const filterBtn = $("#filter-search-btn");
-    const thinkingPanel = $("#thinkingPanel");
-    const thinkingIndicator = $("#thinkingIndicator");
-    const thinkingHistory = $("#thinkingHistory");
-    const clearLogsBtn = $("#clearLogsBtn");
-  
     const resultsWrap = $("#resultsWrap");
     const trackCountEl = $("#trackCount");
     const filtersWrap = $("#filtersWrap");
@@ -531,12 +531,8 @@
     const tagFilterClear = $("#tag-filter-clear");
     const activeFiltersPills = $("#active-filters-pills");
   
-    let es = null;
     let count = 0;
-  
-    // DataStar signals for AI search (updated by SSE patch_signals)
-    const searchSignals = { sending: false, showThinking: false, trackCount: 0, error: null };
-  
+
     // audio: keep only one playing at a time
     let currentlyPlayingAudio = null;
   
@@ -556,20 +552,6 @@
       }
     }
   
-    function updateSignalsDOM() {
-      const sending = !!searchSignals.sending;
-      if (trackCountEl) trackCountEl.textContent = String(searchSignals.trackCount ?? 0);
-      const searchingMsg = $("#searchingMsg");
-      if (searchingMsg) searchingMsg.style.display = sending ? "" : "none";
-      if (thinkingPanel) {
-        thinkingPanel.style.display = searchSignals.showThinking ? "" : "none";
-        thinkingPanel.classList.toggle("idle", !searchSignals.showThinking);
-        thinkingPanel.classList.toggle("search-complete", !sending && searchSignals.showThinking);
-      }
-      setButtonLoading(llmBtn, sending, "llm-search-text", "llm-search-spinner", "AI Search", "Searching...");
-      if (searchSignals.error) alert(searchSignals.error);
-    }
-  
     function removeNoResultsMessage() {
       const el = $("#noResultsMsg");
       if (el) el.remove();
@@ -580,57 +562,6 @@
       removeNoResultsMessage();
       count = 0;
       trackCountEl.textContent = "0";
-    }
-  
-    function closeStream() {
-      if (es) {
-        es.close();
-        es = null;
-      }
-    }
-  
-    // DataStar SSE: apply patch_signals (merge into searchSignals, update DOM)
-    function applyPatchSignals(dataStr) {
-      const match = (dataStr || "").match(/signals\s*(\{[\s\S]*\})/);
-      if (!match) return;
-      try {
-        const patch = JSON.parse(match[1]);
-        Object.assign(searchSignals, patch);
-        updateSignalsDOM();
-      } catch (_) {}
-    }
-  
-    // DataStar SSE: apply patch_elements (selector, mode, elements)
-    function applyPatchElements(dataStr) {
-      const lines = (dataStr || "").split("\n");
-      let mode = "append", selector = "", elementsLines = [];
-      for (const line of lines) {
-        if (line.startsWith("mode ")) mode = line.slice(5).trim();
-        else if (line.startsWith("selector ")) selector = line.slice(9).trim();
-        else if (line.startsWith("elements ")) elementsLines.push(line.slice(9));
-      }
-      const html = elementsLines.join("\n");
-      if (!selector) return;
-      const el = document.querySelector(selector);
-      if (!el) return;
-      if (mode === "append") {
-        el.insertAdjacentHTML("beforeend", html);
-        if (el.id === "thinkingHistory") el.scrollTop = el.scrollHeight;
-      } else if (mode === "inner") {
-        el.innerHTML = html;
-        if (el.id === "thinkingHistory") el.scrollTop = el.scrollHeight;
-      } else if (mode === "replace") {
-        const wrap = document.createElement("div");
-        wrap.innerHTML = html;
-        const newEl = wrap.firstElementChild;
-        if (newEl) {
-          el.innerHTML = newEl.innerHTML;
-          for (const a of newEl.attributes) el.setAttribute(a.name, a.value);
-          for (const a of Array.from(el.attributes)) if (!newEl.hasAttribute(a.name)) el.removeAttribute(a.name);
-          const parent = el.parentElement;
-          if (parent && parent.id === "thinkingHistory") parent.scrollTop = parent.scrollHeight;
-        }
-      }
     }
   
     async function fetchJson(url) {
@@ -1030,54 +961,11 @@
       }
     });
   
-    clearLogsBtn?.addEventListener("click", () => {
-      thinkingHistory.innerHTML = "";
-      searchSignals.showThinking = false;
-      updateSignalsDOM();
-    });
-    $$("#searchTabs .search-mode-btn").forEach(btn => {
-      btn.addEventListener("shown.bs.tab", e => {
-        if (e.target.id === "filter-tab") {
-          thinkingHistory.innerHTML = "";
-          searchSignals.showThinking = false;
-          updateSignalsDOM();
-        }
-      });
-    });
-  
     document.addEventListener("DOMContentLoaded", () => {
       renderFilters(window.__INITIAL_FILTERS__ || {});
     });
-  
-    // AI search: EventSource + DataStar SSE (patch_signals / patch_elements)
-    llmForm.addEventListener("submit", e => {
-      e.preventDefault();
-      const q = (qInput.value || "").trim();
-      if (!q) return;
-      const activeTab = $("#searchTabs .search-mode-btn.active");
-      if (!activeTab || activeTab.id !== "llm-tab") return;
 
-      thinkingHistory.innerHTML = "";
-      filtersWrap.style.display = "none";
-      filtersBadges.innerHTML = "";
-      if (resultsWrap) resultsWrap.innerHTML = '<p id="noResultsMsg" class="text-muted">No tracks yet. Run a search.</p>';
-      searchSignals.sending = true;
-      searchSignals.showThinking = true;
-      searchSignals.trackCount = 0;
-      searchSignals.error = null;
-      updateSignalsDOM();
-      closeStream();
-
-      const url = "{% url 'search_stream' %}" + "?q=" + encodeURIComponent(q);
-      es = new EventSource(url);
-      es.addEventListener("datastar-patch-signals", evt => applyPatchSignals(evt.data));
-      es.addEventListener("datastar-patch-elements", evt => applyPatchElements(evt.data));
-      es.addEventListener("error", () => {
-        searchSignals.sending = false;
-        updateSignalsDOM();
-        closeStream();
-      });
-    });
+    // AI search: DataStar handles form submit via @get(streamUrl, { contentType: 'form' }), applies patch_signals / patch_elements from SSE
 
     const playIconSvg = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><polygon points=\"5,3 19,12 5,21\"></polygon></svg>";
     const pauseIconSvg = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"6\" y=\"5\" width=\"4\" height=\"14\"></rect><rect x=\"14\" y=\"5\" width=\"4\" height=\"14\"></rect></svg>";
