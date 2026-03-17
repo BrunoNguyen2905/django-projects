@@ -21,6 +21,7 @@ dependencies = [
   "uvicorn>=0.40.0",
   "dj-database-url>=3.1.2",
   "psycopg2-binary>=2.9.11",
+  "datastar-py>=0.8.0",
 ]
 
 [dependency-groups]

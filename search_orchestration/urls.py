@@ -1,6 +1,10 @@
 from django.urls import path
 
-from .views import search_stream_view, search_view, search_tags_view
+from .views import (
+    search_stream_view,
+    search_tags_view,
+    search_view,
+)
 
 urlpatterns = [
     path("", search_view, name="search"),
