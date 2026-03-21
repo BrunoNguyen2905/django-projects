@@ -78,8 +78,9 @@ def render_song_card(item: Dict[str, Any]) -> str:
     if mp3:
         mp3_esc = _attr(mp3)
         audio_html = f"""<div class="song-item-audio-controls">
-        <button class="play-btn" type="button" aria-label="Play preview">
-          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><polygon points="5,3 19,12 5,21"></polygon></svg>
+        <button class="play-btn" type="button" aria-label="Play preview" aria-pressed="false">
+          <span class="play-btn__glyph play-btn__glyph--play" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"></polygon></svg></span>
+          <span class="play-btn__glyph play-btn__glyph--pause" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14"></rect><rect x="14" y="5" width="4" height="14"></rect></svg></span>
         </button>
         <audio preload="metadata" class="w-100" data-song-audio data-song-id="{_attr(str(item.get('id') or ''))}">
           <source src="{mp3_esc}" type="audio/mpeg">Your browser does not support the audio element.

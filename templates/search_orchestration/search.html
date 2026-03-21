@@ -444,6 +444,22 @@
       .play-btn:hover {
         background-color: #e60073;
       }
+      /* Two SVGs in DOM: show play vs pause like data-show (per-card state via aria-pressed, not page-level DataStar signals) */
+      .play-btn__glyph {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 0;
+      }
+      .play-btn__glyph--pause {
+        display: none;
+      }
+      .play-btn[aria-pressed="true"] .play-btn__glyph--play {
+        display: none;
+      }
+      .play-btn[aria-pressed="true"] .play-btn__glyph--pause {
+        display: inline-flex;
+      }
       .progress-bar {
         cursor: pointer;
         width: 105px;
@@ -533,9 +549,6 @@
   
     let count = 0;
 
-    // audio: keep only one playing at a time
-    let currentlyPlayingAudio = null;
-  
     // -----------------------------
     // UI utilities
     // -----------------------------
@@ -617,78 +630,43 @@
       if (name === "bpm") el.style.display = (value !== "" && value != null) ? "" : "none";
     }
   
+    /**
+     * Play/pause UI: stays in the browser. DataStar + Python (SSE patch_signals/patch_elements) is for
+     * server-driven state (e.g. AI search stream), not for <audio> timeupdate (many events/sec) or local scrubbing.
+     * See Context7 /starfederation/datastar-python: Django yields SSE; client applies patches — not a replacement for the media element API.
+     */
+    function syncPlayButtonToAudio(btn, audio) {
+      if (!btn || !audio) return;
+      const playing = !audio.paused;
+      btn.setAttribute("aria-pressed", playing ? "true" : "false");
+      btn.setAttribute("aria-label", playing ? "Pause preview" : "Play preview");
+    }
+
+    const PLAY_BTN_INNER_HTML =
+      '<span class="play-btn__glyph play-btn__glyph--play" aria-hidden="true">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><polygon points="5,3 19,12 5,21"></polygon></svg></span>' +
+      '<span class="play-btn__glyph play-btn__glyph--pause" aria-hidden="true">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14"></rect><rect x="14" y="5" width="4" height="14"></rect></svg></span>';
+
     function createAudioControls(audio, audioSlot) {
-      // icons
-      const playIcon = `
-        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-          <polygon points="5,3 19,12 5,21"></polygon>
-        </svg>
-      `;
-      const pauseIcon = `
-        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="6" y="5" width="4" height="14"></rect>
-          <rect x="14" y="5" width="4" height="14"></rect>
-        </svg>
-      `;
-  
       const button = document.createElement("button");
       button.className = "play-btn";
       button.type = "button";
       button.setAttribute("aria-label", "Play preview");
-  
+      button.setAttribute("aria-pressed", "false");
+      button.innerHTML = PLAY_BTN_INNER_HTML;
+
       const progress = document.createElement("input");
       progress.type = "range";
       progress.min = 0;
       progress.value = 0;
       progress.className = "progress-bar";
       progress.setAttribute("aria-label", "Audio progress");
-  
-      const updateButton = () => {
-        button.innerHTML = audio.paused ? playIcon : pauseIcon;
-        button.setAttribute("aria-label", audio.paused ? "Play preview" : "Pause preview");
-      };
-  
-      // Toggle play/pause
-      button.addEventListener("click", () => {
-        audio.paused ? audio.play() : audio.pause();
-      });
-  
-      // Keep only one audio playing
-      audio.addEventListener("play", () => {
-        if (currentlyPlayingAudio && currentlyPlayingAudio !== audio) {
-          currentlyPlayingAudio.pause();
-        }
-        currentlyPlayingAudio = audio;
-        updateButton();
-      });
-  
-      audio.addEventListener("pause", () => {
-        updateButton();
-        if (currentlyPlayingAudio === audio) {
-          currentlyPlayingAudio = null;
-        }
-      });
-  
-      audio.addEventListener("ended", () => {
-        updateButton();
-        if (currentlyPlayingAudio === audio) {
-          currentlyPlayingAudio = null;
-        }
-      });
-  
-      // Progress updates
-      audio.addEventListener("timeupdate", () => {
-        progress.value = (audio.currentTime / audio.duration) * 100 || 0;
-      });
-  
-      progress.addEventListener("input", () => {
-        if (!audio.duration) return;
-        audio.currentTime = (progress.value / 100) * audio.duration;
-      });
-  
-      // initial render
-      updateButton();
-  
+
+      // play / pause / ended / timeupdate / range input: delegated on #resultsWrap (below) for tag + AI cards
+
+      syncPlayButtonToAudio(button, audio);
+
       audioSlot.appendChild(button);
       audioSlot.appendChild(audio);
       audioSlot.appendChild(progress);
@@ -967,11 +945,6 @@
 
     // AI search: DataStar handles form submit via @get(streamUrl, { contentType: 'form' }), applies patch_signals / patch_elements from SSE
 
-    const playIconSvg = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><polygon points=\"5,3 19,12 5,21\"></polygon></svg>";
-    const pauseIconSvg = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"6\" y=\"5\" width=\"4\" height=\"14\"></rect><rect x=\"14\" y=\"5\" width=\"4\" height=\"14\"></rect></svg>";
-    function setPlayButtonIcon(btn, paused) {
-      if (btn) btn.innerHTML = paused ? playIconSvg : pauseIconSvg;
-    }
     resultsWrap?.addEventListener("click", e => {
       const btn = e.target.closest(".play-btn");
       if (!btn) return;
@@ -985,17 +958,17 @@
       if (audio.tagName !== "AUDIO") return;
       document.querySelectorAll("#resultsWrap audio").forEach(a => { if (a !== audio) a.pause(); });
       const btn = audio.closest(".song-item-card")?.querySelector(".play-btn");
-      setPlayButtonIcon(btn, false);
+      syncPlayButtonToAudio(btn, audio);
     }, true);
     resultsWrap?.addEventListener("pause", e => {
       const audio = e.target;
       if (audio.tagName !== "AUDIO") return;
-      setPlayButtonIcon(audio.closest(".song-item-card")?.querySelector(".play-btn"), true);
+      syncPlayButtonToAudio(audio.closest(".song-item-card")?.querySelector(".play-btn"), audio);
     }, true);
     resultsWrap?.addEventListener("ended", e => {
       const audio = e.target;
       if (audio.tagName !== "AUDIO") return;
-      setPlayButtonIcon(audio.closest(".song-item-card")?.querySelector(".play-btn"), true);
+      syncPlayButtonToAudio(audio.closest(".song-item-card")?.querySelector(".play-btn"), audio);
     }, true);
     resultsWrap?.addEventListener("timeupdate", e => {
       const audio = e.target;
