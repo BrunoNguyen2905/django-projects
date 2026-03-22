@@ -1,6 +1,9 @@
 [project]
 name = "lithium"
 version = "0.1.0"
+description = "Django-powered starter / boilerplate (Lithium, formerly DjangoX)"
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = [
   "django ~=5.1",

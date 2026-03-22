@@ -163,4 +163,10 @@ Give a ⭐️ if this project helped you!
 
 ## License
 
-[The MIT License](LICENSE)
+This project is released under the **[MIT License](LICENSE)** (`SPDX-License-Identifier: MIT`).
+
+**Forking and reuse:** You may use, copy, modify, merge, publish, and distribute this code under the terms of the license. Keep a copy of [LICENSE](LICENSE) in your repository and preserve the copyright and permission notice in source distributions. If you maintain a public fork with substantial changes, it is common to add a **second copyright line** under the existing one with your name and year (e.g. `Copyright (c) 2025 Your Name`).
+
+**Dependencies:** Python packages (Django, django-allauth, etc.) have their own licenses; see each package’s metadata on [PyPI](https://pypi.org/) or the vendored `LICENSE` files in your environment after install.
+
+On GitHub, set the repository **License** field by keeping `LICENSE` at the repo root (GitHub detects MIT from the standard file).
