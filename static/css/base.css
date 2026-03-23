@@ -13,6 +13,8 @@ html {
 
 body {
   margin-bottom: 60px; /* Margin bottom by footer height */
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 .container {

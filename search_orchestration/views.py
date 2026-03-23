@@ -1,7 +1,9 @@
-import json
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import JsonResponse
 from django.shortcuts import render
+
+from datastar_py import ServerSentEventGenerator as SSE
+from datastar_py.django import DatastarResponse
 
 from search_orchestration.adapters.ai import (
     stream_orchestrated_search,
@@ -9,8 +11,13 @@ from search_orchestration.adapters.ai import (
 )
 from search_orchestration.adapters.ai.utils import decode_unicode
 from search_orchestration.adapters.soundstripe_adapter import soundstripe_search
-
 from search_orchestration.adapters.ai.taxonomy import MUSIC_TAXONOMY
+from search_orchestration.html_fragments import (
+    render_song_card,
+    render_thinking_line,
+    render_thinking_current_li,
+    escape_thinking_text,
+)
 
 
 @login_required
@@ -44,7 +51,6 @@ def search_tags_view(request):
 
     try:
         songs = soundstripe_search(selection, q=q or None)
-        print('songs from soundstripe_search', songs)
     except Exception as e:
         return JsonResponse(
             {"error": str(e)},
@@ -59,7 +65,7 @@ def search_tags_view(request):
 @login_required
 def search_view(request):
     """
-    GET-only page that shows the search form + JS that connects to SSE stream.
+    GET-only page that shows the search form. AI search stream is consumed via DataStar SSE.
     """
     return render(request, "search_orchestration/search.html", {
         "query": "",
@@ -73,48 +79,55 @@ def search_view(request):
     })
 
 
-def _sse(event: str, data: dict) -> str:
-    """
-    Format a Server-Sent Event message.
-    """
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
 @login_required
 def search_stream_view(request):
     """
-    SSE endpoint:
-      /search/stream?q=your+query
+    DataStar SSE endpoint: /search/stream?q=your+query
 
-    Streams:
-      - log: progress messages (custom events from graph)
-      - results: incremental song batches (custom events from graph)
-      - llm_token: token chunks from LLM generation (messages stream_mode)
-      - state: optional node updates (updates stream_mode)
-      - error: errors
-      - END: completion
+    Yields DataStar events:
+      - patch_signals: sending, showThinking, trackCount, error
+      - patch_elements: thinking lines (append to #thinkingHistory), song cards (append to #resultsWrap)
     """
     query = (request.GET.get("q") or "").strip()
     if not query:
-        return StreamingHttpResponse(
-            iter([_sse("error", {"message": "Missing q parameter"})]),
-            content_type="text/event-stream",
+        return DatastarResponse(
+            iter([
+                SSE.patch_signals({
+                    "sending": False,
+                    "error": "Missing q parameter",
+                }),
+            ])
         )
 
     def event_generator():
         active_llm_node = None
-        started_for_node = False
+        current_line_tokens = []
+        total_count = 0
 
-        def start_node(node: str):
-            nonlocal active_llm_node, started_for_node
-            active_llm_node = node
-            started_for_node = True
-            return _sse("llm_token", {"node": node, "start": True})
+        # Stream start: show loading and thinking panel, clear results and thinking for new search
+        yield SSE.patch_signals({
+            "sending": True,
+            "showThinking": True,
+            "trackCount": 0,
+            "error": None,
+        })
+        yield SSE.patch_elements("", selector="#resultsWrap", mode="inner")
+        yield SSE.patch_elements("", selector="#thinkingHistory", mode="inner")
 
-        def end_node(node: str):
-            nonlocal started_for_node
-            started_for_node = False
-            return _sse("llm_token", {"node": node, "end": True})
+        def finalize_current_thinking():
+            """Replace #thinking-current with finalized <li> (no id) so next node can start fresh."""
+            if not current_line_tokens or not active_llm_node:
+                return
+            line_html = render_thinking_line(
+                "".join(current_line_tokens),
+                node=active_llm_node,
+            )
+            if line_html:
+                yield SSE.patch_elements(
+                    line_html,
+                    selector="#thinking-current",
+                    mode="replace",
+                )
 
         try:
             for mode, chunk in stream_orchestrated_search(
@@ -126,7 +139,21 @@ def search_stream_view(request):
                 if mode == "custom":
                     t = chunk.get("type")
                     if t == "results":
-                        yield _sse("results", {"items": chunk.get("items", [])})
+                        # Finalize current thinking line before showing results
+                        yield from finalize_current_thinking()
+                        current_line_tokens.clear()
+                        active_llm_node = None
+                        items = chunk.get("items", [])
+                        for item in items:
+                            card_html = render_song_card(item)
+                            yield SSE.patch_elements(
+                                card_html,
+                                selector="#resultsWrap",
+                                mode="append",
+                            )
+                        total_count += len(items)
+                        yield SSE.patch_signals({"trackCount": total_count})
+
                 elif mode == "messages":
                     msg, meta = chunk
                     token = getattr(msg, "content", "") or ""
@@ -134,38 +161,78 @@ def search_stream_view(request):
                         continue
 
                     node = (meta.get("langgraph_node") or "").strip() or "llm"
-                    # Don't stream internal selection JSON node(s)
                     if node == "plan_round":
                         continue
-                    # If node switched, close previous + open new
+
                     if active_llm_node is None:
-                        yield start_node(node)
+                        # Start first thinking line: append current li, then stream into it
+                        active_llm_node = node
+                        current_line_tokens = [token]
+                        yield SSE.patch_elements(
+                            render_thinking_current_li(node),
+                            selector="#thinkingHistory",
+                            mode="append",
+                        )
+                        yield SSE.patch_elements(
+                            escape_thinking_text(token),
+                            selector="#thinking-current",
+                            mode="inner",
+                        )
                     elif node != active_llm_node:
-                        yield end_node(active_llm_node)
-                        yield start_node(node)
+                        # Switch node: finalize current line, start new one
+                        yield from finalize_current_thinking()
+                        active_llm_node = node
+                        current_line_tokens = [token]
+                        yield SSE.patch_elements(
+                            render_thinking_current_li(node),
+                            selector="#thinkingHistory",
+                            mode="append",
+                        )
+                        yield SSE.patch_elements(
+                            escape_thinking_text(token),
+                            selector="#thinking-current",
+                            mode="inner",
+                        )
+                    else:
+                        # Same node: append token and update current line in place
+                        current_line_tokens.append(token)
+                        yield SSE.patch_elements(
+                            escape_thinking_text("".join(current_line_tokens)),
+                            selector="#thinking-current",
+                            mode="inner",
+                        )
 
-                    # Normal token emit
-                    yield _sse("llm_token", {"node": node, "token": token})
         except Exception as e:
-            # close cursor cleanly on error
-            if active_llm_node and started_for_node:
-                yield end_node(active_llm_node)
-            yield _sse("error", {"message": str(e)})
+            yield from finalize_current_thinking()
+            yield SSE.patch_signals({
+                "sending": False,
+                "error": str(e),
+            })
+            return
 
-        # close cursor cleanly at the end
-        if active_llm_node and started_for_node:
-            yield end_node(active_llm_node)
-        yield _sse("END", {})
-    resp = StreamingHttpResponse(
-        event_generator(), content_type="text/event-stream")
+        # Finalize last thinking line (replace #thinking-current with plain li)
+        yield from finalize_current_thinking()
 
-    resp['Cache-Control'] = "no-cache"
-    resp['X-Accel-Buffering'] = "no"
-    return resp
+        # Stream end: stop loading but keep thinking panel visible so user can review
+        yield SSE.patch_signals({
+            "sending": False,
+            "trackCount": total_count,
+        })
+
+        if total_count == 0:
+            yield SSE.patch_elements(
+                '<p id="noResultsMsg" class="text-muted">No tracks found.</p>',
+                selector="#resultsWrap",
+                mode="append",
+            )
+
+    return DatastarResponse(event_generator())
 
 
-def _sse(event: str, data: dict) -> str:
-    """
-    Format a Server-Sent Event message.
-    """
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+@login_required
+def search_clear_thinking_view(request):
+    """DataStar endpoint: clear thinking panel and hide it (Clear button / tab switch)."""
+    return DatastarResponse(iter([
+        SSE.patch_signals({"showThinking": False}),
+        SSE.patch_elements("", selector="#thinkingHistory", mode="inner"),
+    ]))

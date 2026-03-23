@@ -3,7 +3,7 @@
 {% block title %}Music Search{% endblock title %}
 
 {% block content %}
-<div class="container-fluid">
+<div class="container-fluid search-page-wrap" data-signals="{ sending: false, showThinking: false, trackCount: 0, error: null }">
   <!-- Search Form - Full Width at Top -->
   <div class="row mb-4">
     <div class="col-12">
@@ -17,24 +17,28 @@
             <button class="search-mode-btn active" id="llm-tab" data-bs-toggle="tab" data-bs-target="#llm-search" type="button" role="tab" aria-controls="llm-search" aria-selected="true">
               AI-Powered Search
             </button>
-            <button class="search-mode-btn" id="filter-tab" data-bs-toggle="tab" data-bs-target="#filter-search" type="button" role="tab" aria-controls="filter-search" aria-selected="false">
+            <button class="search-mode-btn" id="filter-tab" data-bs-toggle="tab" data-bs-target="#filter-search" type="button" role="tab" aria-controls="filter-search" aria-selected="false"
+              data-on:shown.bs.tab="@get('{% url 'search_clear_thinking' %}')">
               Tag-Based Search
             </button>
           </div>
 
           <!-- Tab Content -->
           <div class="tab-content" id="searchTabsContent">
-            <!-- AI-Powered Search Tab -->
+            <!-- AI-Powered Search Tab (DataStar: form submit triggers @get with contentType form → SSE stream) -->
             <div class="tab-pane fade show active" id="llm-search" role="tabpanel" aria-labelledby="llm-tab">
-              <form id="llm-search-form" method="get">
+              <form id="llm-search-form" method="get"
+                data-on:submit="@get('{% url 'search_stream' %}', { contentType: 'form', openWhenHidden: true })">
                 <div class="mb-3">
                   <label for="q" class="form-label">Describe Your Music</label>
                   <textarea class="form-control" id="q" name="q" rows="3" placeholder="E.g., 'upbeat electronic music for a party' or 'calm acoustic guitar for studying'">{{ query|default:'' }}</textarea>
                   <div class="form-text">Use natural language to describe the music you want</div>
                 </div>
-                <button type="submit" class="btn btn-primary w-100" id="llm-search-btn">
-                  <span id="llm-search-text">AI Search</span>
-                  <div id="llm-search-spinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status">
+                <button type="submit" class="btn btn-primary w-100" id="llm-search-btn"
+                  data-attr:disabled="$sending">
+                  <span id="llm-search-text" data-text="$sending ? 'Searching...' : 'AI Search'">AI Search</span>
+                  <div id="llm-search-spinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status"
+                    data-class:d-none="!$sending">
                     <span class="visually-hidden">Loading...</span>
                   </div>
                 </button>
@@ -154,11 +158,13 @@
   <div class="row">
     <div class="col-12">
 
-    <p class="text-muted mb-4" data-show="$sending">Searching...</p>
+    <p class="text-muted mb-4" id="searchingMsg" style="display: none;" data-show="$sending">Searching...</p>
 
-    <!-- Progress: real-time thinking list -->
+    <!-- Progress: real-time thinking list (DataStar: visibility from $showThinking, dots hide when $sending false) -->
     <div class="mb-4">
-      <div id="thinkingPanel" class="search-thinking-panel rounded-3 px-3 py-2" style="display: none;">
+      <div id="thinkingPanel" class="search-thinking-panel rounded-3 px-3 py-2" style="display: none;"
+        data-show="$showThinking"
+        data-class:search-complete="!$sending && $showThinking">
         <div class="d-flex align-items-start gap-2">
           <div id="thinkingIndicator" class="search-thinking-dots flex-shrink-0 mt-2">
             <span></span><span></span><span></span>
@@ -166,12 +172,21 @@
           <div class="flex-grow-1 min-w-0">
             <ul id="thinkingHistory" class="search-thinking-list list-unstyled mb-0 small" aria-label="Search progress"></ul>
           </div>
-          <button type="button" class="btn btn-sm btn-link text-muted p-0 align-self-start" id="clearLogsBtn" title="Clear">Clear</button>
+          <button type="button" class="btn btn-sm btn-link text-muted p-0 align-self-start" id="clearLogsBtn" title="Clear"
+            data-on:click="@get('{% url 'search_clear_thinking' %}')">Clear</button>
         </div>
       </div>
     </div>
 
+    <div class="alert alert-danger mb-3" role="alert" style="display: none;" data-show="$error" data-text="$error"></div>
+
     <style>
+      /* Prevent horizontal scroll: contain overflow from row gutters and wide flex content */
+      .search-page-wrap {
+        overflow-x: hidden;
+        max-width: 100%;
+        box-sizing: border-box;
+      }
       .search-thinking-panel {
         background: var(--bs-tertiary-bg, #f8f9fa);
         border: 1px solid var(--bs-border-color-translucent, rgba(0,0,0,.08));
@@ -195,7 +210,8 @@
         0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
         40% { transform: scale(1); opacity: 0.9; }
       }
-      .search-thinking-panel.idle .search-thinking-dots {
+      .search-thinking-panel.idle .search-thinking-dots,
+      .search-thinking-panel.search-complete .search-thinking-dots {
         display: none;
       }
       .search-thinking-list {
@@ -205,20 +221,16 @@
         color: var(--bs-secondary-color, #6c757d);
         font-size: 0.8125rem;
         line-height: 1.5;
+        contain: layout style;
       }
       .search-thinking-list li {
         padding: 0.2rem 0;
         border-bottom: 1px solid var(--bs-border-color-translucent, rgba(0,0,0,.06));
         word-break: break-word;
         white-space: pre-wrap;
-        animation: search-thinking-fade-in 0.35s ease-out;
       }
       .search-thinking-list li:last-child {
         border-bottom: none;
-      }
-      @keyframes search-thinking-fade-in {
-        from { opacity: 0; transform: translateY(-4px); }
-        to { opacity: 1; transform: translateY(0); }
       }
 
       /* Search mode: 2 boxes (All / AI-generated style) */
@@ -295,6 +307,13 @@
         opacity: 1;
       }
 
+      /* Results row: prevent row negative margins from causing horizontal scroll */
+      #resultsWrap {
+        min-width: 0;
+      }
+      #resultsWrap > [class*="col-"] {
+        min-width: 0;
+      }
       /* Song item card: horizontal layout with art, title/artist, progress/duration/BPM, tags, actions; audio controls on second row */
       .song-item-card {
         position: relative;
@@ -306,6 +325,7 @@
         background: var(--bs-body-bg, #fff);
         border: 1px solid var(--bs-border-color-translucent, rgba(0,0,0,.08));
         border-radius: 0.5rem;
+        min-width: 0;
       }
       .song-item-audio-controls {
         display: flex;
@@ -424,6 +444,22 @@
       .play-btn:hover {
         background-color: #e60073;
       }
+      /* Two SVGs in DOM: show play vs pause like data-show (per-card state via aria-pressed, not page-level DataStar signals) */
+      .play-btn__glyph {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 0;
+      }
+      .play-btn__glyph--pause {
+        display: none;
+      }
+      .play-btn[aria-pressed="true"] .play-btn__glyph--play {
+        display: none;
+      }
+      .play-btn[aria-pressed="true"] .play-btn__glyph--pause {
+        display: inline-flex;
+      }
       .progress-bar {
         cursor: pointer;
         width: 105px;
@@ -452,7 +488,7 @@
     </div>
 
     <!-- Results -->
-    <h2 class="h5 mb-3">Tracks (<span id="trackCount">0</span>)</h2>
+    <h2 class="h5 mb-3">Tracks (<span id="trackCount" data-text="$trackCount">0</span>)</h2>
 
     <div id="resultsWrap" class="row g-3">
       <p id="noResultsMsg" class="text-muted">No tracks yet. Run a search.</p>
@@ -498,18 +534,9 @@
     const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   
     // -----------------------------
-    // Elements
+    // Elements (AI search UI is driven by DataStar; only tag search + results need refs)
     // -----------------------------
-    const llmForm = $("#llm-search-form");
-    const qInput = $("#q");
-    const llmBtn = $("#llm-search-btn");
-  
     const filterBtn = $("#filter-search-btn");
-    const thinkingPanel = $("#thinkingPanel");
-    const thinkingIndicator = $("#thinkingIndicator");
-    const thinkingHistory = $("#thinkingHistory");
-    const clearLogsBtn = $("#clearLogsBtn");
-  
     const resultsWrap = $("#resultsWrap");
     const trackCountEl = $("#trackCount");
     const filtersWrap = $("#filtersWrap");
@@ -520,12 +547,8 @@
     const tagFilterClear = $("#tag-filter-clear");
     const activeFiltersPills = $("#active-filters-pills");
   
-    let es = null;
     let count = 0;
-  
-    // audio: keep only one playing at a time (no need to query all audios each time)
-    let currentlyPlayingAudio = null;
-  
+
     // -----------------------------
     // UI utilities
     // -----------------------------
@@ -542,33 +565,6 @@
       }
     }
   
-    function setSending(isSending) {
-      setButtonLoading(
-        llmBtn,
-        isSending,
-        "llm-search-text",
-        "llm-search-spinner",
-        "AI Search",
-        "Searching..."
-      );
-    }
-  
-    function showThinkingPanel(show) {
-      if (!thinkingPanel) return;
-      thinkingPanel.style.display = show ? "" : "none";
-      thinkingPanel.classList.toggle("idle", !show);
-    }
-  
-    function appendProgressLine(line) {
-      const text = (line || "").trim();
-      if (!text) return;
-      const li = document.createElement("li");
-      li.textContent = text;
-      thinkingHistory.appendChild(li);
-      thinkingHistory.scrollTop = thinkingHistory.scrollHeight;
-      showThinkingPanel(true);
-    }
-  
     function removeNoResultsMessage() {
       const el = $("#noResultsMsg");
       if (el) el.remove();
@@ -579,13 +575,6 @@
       removeNoResultsMessage();
       count = 0;
       trackCountEl.textContent = "0";
-    }
-  
-    function closeStream() {
-      if (es) {
-        es.close();
-        es = null;
-      }
     }
   
     async function fetchJson(url) {
@@ -641,85 +630,49 @@
       if (name === "bpm") el.style.display = (value !== "" && value != null) ? "" : "none";
     }
   
+    /**
+     * Play/pause UI: stays in the browser. DataStar + Python (SSE patch_signals/patch_elements) is for
+     * server-driven state (e.g. AI search stream), not for <audio> timeupdate (many events/sec) or local scrubbing.
+     * See Context7 /starfederation/datastar-python: Django yields SSE; client applies patches — not a replacement for the media element API.
+     */
+    function syncPlayButtonToAudio(btn, audio) {
+      if (!btn || !audio) return;
+      const playing = !audio.paused;
+      btn.setAttribute("aria-pressed", playing ? "true" : "false");
+      btn.setAttribute("aria-label", playing ? "Pause preview" : "Play preview");
+    }
+
+    const PLAY_BTN_INNER_HTML =
+      '<span class="play-btn__glyph play-btn__glyph--play" aria-hidden="true">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><polygon points="5,3 19,12 5,21"></polygon></svg></span>' +
+      '<span class="play-btn__glyph play-btn__glyph--pause" aria-hidden="true">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14"></rect><rect x="14" y="5" width="4" height="14"></rect></svg></span>';
+
     function createAudioControls(audio, audioSlot) {
-      // icons
-      const playIcon = `
-        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-          <polygon points="5,3 19,12 5,21"></polygon>
-        </svg>
-      `;
-      const pauseIcon = `
-        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="6" y="5" width="4" height="14"></rect>
-          <rect x="14" y="5" width="4" height="14"></rect>
-        </svg>
-      `;
-  
       const button = document.createElement("button");
       button.className = "play-btn";
       button.type = "button";
       button.setAttribute("aria-label", "Play preview");
-  
+      button.setAttribute("aria-pressed", "false");
+      button.innerHTML = PLAY_BTN_INNER_HTML;
+
       const progress = document.createElement("input");
       progress.type = "range";
       progress.min = 0;
       progress.value = 0;
       progress.className = "progress-bar";
       progress.setAttribute("aria-label", "Audio progress");
-  
-      const updateButton = () => {
-        button.innerHTML = audio.paused ? playIcon : pauseIcon;
-        button.setAttribute("aria-label", audio.paused ? "Play preview" : "Pause preview");
-      };
-  
-      // Toggle play/pause
-      button.addEventListener("click", () => {
-        audio.paused ? audio.play() : audio.pause();
-      });
-  
-      // Keep only one audio playing
-      audio.addEventListener("play", () => {
-        if (currentlyPlayingAudio && currentlyPlayingAudio !== audio) {
-          currentlyPlayingAudio.pause();
-        }
-        currentlyPlayingAudio = audio;
-        updateButton();
-      });
-  
-      audio.addEventListener("pause", () => {
-        updateButton();
-        if (currentlyPlayingAudio === audio) {
-          currentlyPlayingAudio = null;
-        }
-      });
-  
-      audio.addEventListener("ended", () => {
-        updateButton();
-        if (currentlyPlayingAudio === audio) {
-          currentlyPlayingAudio = null;
-        }
-      });
-  
-      // Progress updates
-      audio.addEventListener("timeupdate", () => {
-        progress.value = (audio.currentTime / audio.duration) * 100 || 0;
-      });
-  
-      progress.addEventListener("input", () => {
-        if (!audio.duration) return;
-        audio.currentTime = (progress.value / 100) * audio.duration;
-      });
-  
-      // initial render
-      updateButton();
-  
+
+      // play / pause / ended / timeupdate / range input: delegated on #resultsWrap (below) for tag + AI cards
+
+      syncPlayButtonToAudio(button, audio);
+
       audioSlot.appendChild(button);
       audioSlot.appendChild(audio);
       audioSlot.appendChild(progress);
     }
   
     function addSongCard(song) {
-      console.log("song", song.tags);
       const tpl = $("#song-card-tpl");
       if (!tpl || !tpl.content) return;
   
@@ -986,156 +939,49 @@
       }
     });
   
-    // -----------------------------
-    // Clear logs
-    // -----------------------------
-    clearLogsBtn?.addEventListener("click", () => {
-      thinkingHistory.innerHTML = "";
-      showThinkingPanel(false);
-      console.log("[UI] cleared progress");
-    });
-  
-    // When switching to Tag-Based Search, hide/clear thinking (AI-only)
-    $$("#searchTabs .search-mode-btn").forEach(btn => {
-      btn.addEventListener("shown.bs.tab", e => {
-        if (e.target.id === "filter-tab") {
-          thinkingHistory.innerHTML = "";
-          showThinkingPanel(false);
-        }
-      });
-    });
-  
-    // Initialize count for server-rendered results (fallback)
     document.addEventListener("DOMContentLoaded", () => {
       renderFilters(window.__INITIAL_FILTERS__ || {});
     });
-  
-    // -----------------------------
-    // AI search SSE
-    // -----------------------------
-    llmForm.addEventListener("submit", e => {
-      e.preventDefault();
-      const q = (qInput.value || "").trim();
-      if (!q) return;
-  
-      // Only proceed if we're on AI search tab
-      const activeTab = $("#searchTabs .search-mode-btn.active");
-      if (!activeTab || activeTab.id !== "llm-tab") return;
-  
-      thinkingHistory.innerHTML = "";
-      showThinkingPanel(true);
-      thinkingIndicator.classList.remove("d-none");
-      filtersWrap.style.display = "none";
-      filtersBadges.innerHTML = "";
-      clearResults();
 
-      closeStream();
-      setSending(true);
+    // AI search: DataStar handles form submit via @get(streamUrl, { contentType: 'form' }), applies patch_signals / patch_elements from SSE
 
-      const url = "{% url 'search_stream' %}" + "?q=" + encodeURIComponent(q);
-      console.log("[SSE] connecting:", url);
-
-      es = new EventSource(url);
-
-      let activeLi = null;
-      let activeNode = null;
-
-      function createLine(node) {
-        const li = document.createElement("li");
-        li.dataset.node = node;
-        li.className = "typed-line";
-        thinkingHistory.appendChild(li);
-        thinkingHistory.scrollTop = thinkingHistory.scrollHeight;
-        showThinkingPanel(true);
-        return li;
-      }
-
-      function setCursor(li, node) {
-        if (activeLi && activeLi.isConnected) {
-          activeLi.classList.remove("typing-line");
-          activeLi.classList.add("typed-line");
-        }
-        activeLi = li;
-        activeNode = node;
-
-        if (activeLi) {
-          activeLi.classList.add("typing-line");
-        }
-      }
-
-      function stopCursor() {
-        if (activeLi && activeLi.isConnected) {
-          activeLi.classList.remove("typing-line");
-          activeLi.classList.add("typed-line");
-        }
-        activeLi = null;
-        activeNode = null;
-      }
-
-      // -----------------------------
-      // llm_token (robust)
-      // -----------------------------
-      es.addEventListener("llm_token", evt => {
-        const data = JSON.parse(evt.data || "{}");
-        const node = (data.node || "").trim();
-        if (!node) return;
-
-        // start => always new line for that node-run
-        if (data.start) {
-          const li = createLine(node);
-          setCursor(li, node);
-          return;
-        }
-
-        // end => stop cursor IF this end belongs to the active node
-        if (data.end) {
-          if (node === activeNode) stopCursor();
-          return;
-        }
-
-        // token => if node changes or no active line, start a new line
-        if (!activeLi || !activeLi.isConnected || node !== activeNode) {
-          const li = createLine(node);
-          setCursor(li, node);
-        }
-
-        activeLi.textContent += (data.token || "");
-        thinkingHistory.scrollTop = thinkingHistory.scrollHeight;
-      });
-
-      // -----------------------------
-      // Results
-      // -----------------------------
-      es.addEventListener("results", evt => {
-        const data = JSON.parse(evt.data || "{}");
-        const items = data.items || [];
-        if (items.length) {
-          items.forEach(addSongCard);
-          count += items.length;
-          trackCountEl.textContent = String(count);
-        }
-      });
-
-      // -----------------------------
-      // Error
-      // -----------------------------
-      es.addEventListener("error", evt => {
-        // EventSource "error" fires for normal close too; avoid double noise after END
-        stopCursor();
-        thinkingIndicator.classList.add("d-none");
-        setSending(false);
-        closeStream();
-      });
-
-      // -----------------------------
-      // End
-      // -----------------------------
-      es.addEventListener("END", evt => {
-        stopCursor();
-        thinkingIndicator.classList.add("d-none");
-        setSending(false);
-        closeStream();
-      });
+    resultsWrap?.addEventListener("click", e => {
+      const btn = e.target.closest(".play-btn");
+      if (!btn) return;
+      const card = btn.closest(".song-item-card");
+      const audio = card?.querySelector("audio");
+      if (!audio) return;
+      audio.paused ? audio.play() : audio.pause();
+    });
+    resultsWrap?.addEventListener("play", e => {
+      const audio = e.target;
+      if (audio.tagName !== "AUDIO") return;
+      document.querySelectorAll("#resultsWrap audio").forEach(a => { if (a !== audio) a.pause(); });
+      const btn = audio.closest(".song-item-card")?.querySelector(".play-btn");
+      syncPlayButtonToAudio(btn, audio);
+    }, true);
+    resultsWrap?.addEventListener("pause", e => {
+      const audio = e.target;
+      if (audio.tagName !== "AUDIO") return;
+      syncPlayButtonToAudio(audio.closest(".song-item-card")?.querySelector(".play-btn"), audio);
+    }, true);
+    resultsWrap?.addEventListener("ended", e => {
+      const audio = e.target;
+      if (audio.tagName !== "AUDIO") return;
+      syncPlayButtonToAudio(audio.closest(".song-item-card")?.querySelector(".play-btn"), audio);
+    }, true);
+    resultsWrap?.addEventListener("timeupdate", e => {
+      const audio = e.target;
+      if (audio.tagName !== "AUDIO") return;
+      const card = audio.closest(".song-item-card");
+      const progress = card?.querySelector(".progress-bar");
+      if (progress && audio.duration) progress.value = (audio.currentTime / audio.duration) * 100;
+    });
+    resultsWrap?.addEventListener("input", e => {
+      const progress = e.target;
+      if (!progress?.classList?.contains("progress-bar")) return;
+      const audio = progress.closest(".song-item-card")?.querySelector("audio");
+      if (audio?.duration) audio.currentTime = (progress.value / 100) * audio.duration;
     });
   })();
   </script>
